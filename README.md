@@ -64,6 +64,7 @@ This project is a full-stack supply chain visibility solution built on AWS. It s
 - **IAM**: Manages permissions for Lambda roles.
 - **CloudWatch**: Logs Lambda execution and errors.
 
+##How It Works
 
 1️⃣ **Simulation**:  
 The `event_simulator.py` script generates batches of random shipment events and POSTs them to the API Gateway endpoint.
@@ -81,6 +82,4 @@ Streamlit dashboard connects to DynamoDB to visualize:
 - Active shipments on a map.
 - Delivery status breakdown.
 - Tables of shipment records.
-
-
 
