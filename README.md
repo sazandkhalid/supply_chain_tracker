@@ -23,5 +23,36 @@ This project is a full-stack supply chain visibility solution built on AWS. It s
   - Active shipments table
 
 ---
+## Architecture Diagram 
+
++------------------------+
+|   Event Simulator      |
+| (Python script)        |
++-----------+------------+
+            |
+            v
++------------------------+
+|    API Gateway         |
++-----------+------------+
+            |
+            v
++------------------------+
+|      AWS Lambda        |
+| - Validates events     |
+| - Stores in DynamoDB   |
+| - Archives batch in S3 |
++-----------+------------+
+            |                 |
+     +------+-------+    +----+-----+
+     | DynamoDB     |    |   S3      |
+     | Shipments    |    | Archive   |
+     +--------------+    +----------+
+            |
+            v
++------------------------+
+|   Streamlit Dashboard  |
+| - Connects to DynamoDB |
+| - Maps, Charts, Tables |
++------------------------+
 
 
