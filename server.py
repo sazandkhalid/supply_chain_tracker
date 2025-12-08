@@ -8,6 +8,7 @@ from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
+connected_clients = set()
 
 app.add_middleware(
     CORSMiddleware,
@@ -161,7 +162,7 @@ async def start_sim(data: dict):
             "status": "Anchored",
         },
     }
-
+    asyncio.create_task(simulation_loop())
     return {"ok": True}
 
 
@@ -238,6 +239,31 @@ def build_payload():
         ],
     }
 
+async def simulation_loop():
+    global trucks_state
+    first_payload = build_payload()
+    for ws in list(connected_clients):
+        try:
+            await ws.send_json(first_payload)
+        except:
+            pass
+
+    while True:
+        update_trucks()
+        update_ships()
+        payload = build_payload()
+
+        dead = []
+        for ws in list(connected_clients):
+            try:
+                await ws.send_json(payload)
+            except:
+                dead.append(ws)
+
+        for ws in dead:
+            connected_clients.remove(ws)
+
+        await asyncio.sleep(1)
 
 # =========================================
 # WEBSOCKET STREAM
@@ -245,11 +271,15 @@ def build_payload():
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
     await ws.accept()
+    connected_clients.add(ws)
+
     try:
         while True:
-            await ws.send_text(json.dumps(build_payload()))
-            await asyncio.sleep(1)
+            await asyncio.sleep(1)  # just keep alive
     except:
+        pass
+    finally:
+        connected_clients.remove(ws)
         print("[WS] disconnected")
 
 
