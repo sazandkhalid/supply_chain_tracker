@@ -2,7 +2,7 @@
 title: "Shipment Setup"
 ---
 
-## 🚚 Iraq Truck Shipment Setup
+## Iraq Truck Shipment Setup
 
 Fill the form below to create your simulation.
 

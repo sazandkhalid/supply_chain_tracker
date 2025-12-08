@@ -1,15 +1,20 @@
 ---
 title: "Live Truck Simulation"
+format:
+  html:
+    theme: cosmo
+    css: assets/style.css
 ---
 
-## 🚚 Live Iraq Logistics Map
+# Live Logistics Control Tower
 
-<div id="map" style="height: 650px;"></div>
+<div class="subtitle">
+نحن نوفر معلومات فورية لمسارات الشحن وتوقعات دقيقة لمواعيد الوصول في عمليات النقل البري والموانئ داخل العراق
+</div>
 
-<link
-  rel="stylesheet"
-  href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css"
-/>
+<div id="map" class="map-container"></div>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
 
 <script>

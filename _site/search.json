@@ -12,5 +12,12 @@
     "title": "Shipment Setup",
     "section": "",
     "text": "Fill the form below to create your simulation.\n\n\nNumber of shipments (trucks): \n\n\nOrigin Port:  Basra Port Umm Qasr \n\n\nDestination:  Baghdad Depot Mosul Depot Erbil Depot Kirkuk Depot \n\n\nDeparture Time: \n\n\nStart Simulation"
+  },
+  {
+    "objectID": "simulate.html",
+    "href": "simulate.html",
+    "title": "Live Truck Simulation",
+    "section": "",
+    "text": "Live Logistics Control Tower\n\nنحن نوفر معلومات فورية لمسارات الشحن وتوقعات دقيقة لمواعيد الوصول في عمليات النقل البري والموانئ داخل العراق"
   }
 ]
