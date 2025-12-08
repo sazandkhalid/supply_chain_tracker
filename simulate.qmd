@@ -1,0 +1,114 @@
+---
+title: "Live Truck Simulation"
+---
+
+## 🚚 Live Iraq Logistics Map
+
+<div id="map" style="height: 650px;"></div>
+
+<link
+  rel="stylesheet"
+  href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css"
+/>
+<script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
+
+<script>
+
+// ===================================================
+// 1. Determine WebSocket endpoint
+// ===================================================
+let wsURL;
+
+// Detect environment
+if (location.hostname === "localhost" || location.hostname === "127.0.0.1") {
+    wsURL = "ws://localhost:8000/ws";
+} else {
+    // For deployment (update to your ngrok or server)
+    wsURL = "wss://YOUR_NGROK_ID.ngrok-free.app/ws";
+}
+
+console.log("Using WebSocket:", wsURL);
+
+const ws = new WebSocket(wsURL);
+
+// ===================================================
+// 2. Setup Leaflet Map
+// ===================================================
+const map = L.map('map').setView([33.3, 44.4], 6);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 18
+}).addTo(map);
+
+// Marker storage
+const truckMarkers = {};
+const shipMarkers = {};
+let routeLine = null;
+let routeLine4 = null;
+
+// Icons
+const truckIcon = L.icon({
+    iconUrl: 'https://cdn-icons-png.flaticon.com/512/741/741407.png',
+    iconSize: [32, 32]
+});
+
+const shipIcon = L.icon({
+    iconUrl: 'https://cdn-icons-png.flaticon.com/512/5362/5362721.png',
+    iconSize: [32, 32]
+});
+
+// ===================================================
+// 3. Handle incoming WebSocket messages
+// ===================================================
+ws.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+
+  // ---------------- ROUTE LINES -----------------
+  if (routeLine) {
+      map.removeLayer(routeLine);
+  }
+  routeLine = L.polyline(data.routePolyline, {color: 'blue'}).addTo(map);
+
+  // Recenter
+  if (data.routePolyline && data.routePolyline.length > 0) {
+      const bounds = L.latLngBounds(data.routePolyline);
+      map.fitBounds(bounds);
+  }
+
+  // ---------------- TRUCKS -----------------
+  Object.values(data.trucks).forEach(t => {
+    if (!truckMarkers[t.id]) {
+        truckMarkers[t.id] = L.marker([t.lat, t.lon], {icon: truckIcon})
+           .bindPopup(`${t.id}<br>Status: ${t.status}<br>ETA: ${t.eta}`)
+           .addTo(map);
+    } else {
+        truckMarkers[t.id]
+          .setLatLng([t.lat, t.lon])
+          .setPopupContent(`${t.id}<br>Status: ${t.status}<br>ETA: ${t.eta}`);
+    }
+  });
+
+  // ---------------- SHIPS -----------------
+  Object.values(data.ships).forEach(s => {
+    if (!shipMarkers[s.id]) {
+        shipMarkers[s.id] = L.marker([s.lat, s.lon], {icon: shipIcon})
+          .bindPopup(`${s.id}<br>Status: ${s.status}`)
+          .addTo(map);
+    } else {
+        shipMarkers[s.id]
+          .setLatLng([s.lat, s.lon])
+          .setPopupContent(`${s.id}<br>Status: ${s.status}`);
+    }
+  });
+};
+
+
+// ===================================================
+// 4. Error Handling
+// ===================================================
+ws.onerror = (err) => {
+    alert("WebSocket connection failed. Is the server running?");
+    console.error(err);
+};
+
+</script>
