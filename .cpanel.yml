@@ -1,4 +1,4 @@
 deployment:
   tasks:
-    - export DEPLOYPATH=/home/sazdsan/domains/sazdsan.georgetown.domains/public_html/
+    - export DEPLOYPATH=/home/sazdsang/domains/sazdsan.georgetown.domains/public_html/
     - /bin/cp -R _site/* $DEPLOYPATH
