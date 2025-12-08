@@ -1,0 +1,40 @@
+/* Layout & typography */
+.subtitle {
+  color: #444;
+  margin-bottom: 1.2rem;
+  font-size: 1.1rem;
+}
+
+.setup-panel {
+  max-width: 500px;
+  background: #fff;
+  padding: 24px 28px;
+  border-radius: 12px;
+  box-shadow: 0 0 16px rgba(0,0,0,0.08);
+}
+
+.form-element {
+  margin-bottom: 18px;
+}
+
+.map-container {
+  height: 650px;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 0 18px rgba(0,0,0,0.1);
+}
+
+/* Buttons */
+button {
+  width: 100%;
+}
+
+.btn-primary {
+  font-size: 1.1rem;
+  padding: 10px 18px;
+}
+
+/* Page spacing */
+.quarto-page {
+  margin-top: 40px;
+}
