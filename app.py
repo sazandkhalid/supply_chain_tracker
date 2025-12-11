@@ -1,5 +1,6 @@
 import streamlit as st
 import boto3
+import os
 import folium
 from streamlit_folium import st_folium
 import requests
@@ -165,8 +166,12 @@ def update_truck_position(table, truck):
 st.title("🇮🇶 Iraq Supply Chain – Live Truck Tracker")
 
 # DynamoDB
-dynamodb = boto3.resource("dynamodb", region_name="eu-north-1")
-table = dynamodb.Table("Shipments")
+# Use environment variables with fallback defaults
+AWS_REGION = os.getenv("AWS_REGION", os.getenv("AWS_DEFAULT_REGION", "eu-north-1"))
+DYNAMODB_TABLE_NAME = os.getenv("DYNAMODB_TABLE_NAME", "Shipments")
+
+dynamodb = boto3.resource("dynamodb", region_name=AWS_REGION)
+table = dynamodb.Table(DYNAMODB_TABLE_NAME)
 
 TRUCKS = ["TRUCK-1", "TRUCK-2", "TRUCK-3"]
 

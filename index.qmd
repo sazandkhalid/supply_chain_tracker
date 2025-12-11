@@ -17,7 +17,6 @@ Fill the form below to create your simulation.
 <label>Origin Port:</label>
 <select id="origin">
   <option>Basra Port</option>
-  <option>Umm Qasr</option>
 </select>
 </div>
 

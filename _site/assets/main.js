@@ -1,29 +1,23 @@
+const API_BASE = "https://logistics-backend.fly.dev";  // <-- your real fly domain
+
 async function startSim() {
     const numTrucks = document.getElementById("numTrucks").value;
     const origin = document.getElementById("origin").value;
     const destination = document.getElementById("destination").value;
     const departure = document.getElementById("departure").value;
 
-    const payload = {
-        numTrucks,
-        origin,
-        destination,
-        departure
-    };
+    const payload = { numTrucks, origin, destination, departure };
 
-    console.log("Sending to backend:", payload);
-
-    const resp = await fetch("http://localhost:8000/start-sim", {
+    const resp = await fetch(`${API_BASE}/start-sim`, {
         method: "POST",
-        headers: {"Content-Type": "application/json"},
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
     });
 
-    if (!resp.ok) {
-        alert("Failed to start simulation");
-        return;
+    const result = await resp.json();
+    if (result.ok) {
+        window.location.href = "simulate.html";
+    } else {
+        alert(result.error);
     }
-
-    // After backend generates trucks → go to map
-    window.location.href = "simulate.html";
 }

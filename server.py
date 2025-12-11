@@ -3,9 +3,14 @@ import json
 import random
 import requests
 import math
+import boto3
+import os
+from decimal import Decimal
 from datetime import datetime, timedelta
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
+from boto3.dynamodb.conditions import Attr
+import joblib
 
 app = FastAPI()
 connected_clients = set()
@@ -18,11 +23,50 @@ app.add_middleware(
 )
 
 # ===============================
-# GLOBAL STATE (EMPTY AT START)
+# DYNAMODB SETUP
 # ===============================
-trucks_state = {}
-current_route_polyline = []   # map route to show
-ships_state = {}
+# Use environment variables with fallback defaults
+AWS_REGION = os.getenv("AWS_REGION", os.getenv("AWS_DEFAULT_REGION", "eu-north-1"))
+DYNAMODB_TABLE_NAME = os.getenv("DYNAMODB_TABLE_NAME", "Shipments")
+
+dynamodb = boto3.resource("dynamodb", region_name=AWS_REGION)
+table = dynamodb.Table(DYNAMODB_TABLE_NAME)
+
+print(f"🔗 Connected to DynamoDB table '{DYNAMODB_TABLE_NAME}' in region '{AWS_REGION}'")
+
+kmeans_model = None
+delay_model = None
+
+try:
+    kmeans_model = joblib.load("models/kmeans_speed_cluster.pkl")
+    print("🤖 Loaded KMeans speed clustering model")
+except Exception as e:
+    print(f"⚠️ Could not load KMeans model: {e}")
+
+try:
+    delay_model = joblib.load("models/delay_model.pkl")
+    print("🤖 Loaded delay risk model")
+except Exception as e:
+    print(f"⚠️ Could not load delay model: {e}")
+
+# Helper to serialize route for DynamoDB
+def serialize_route(route):
+    """Convert list of (lat, lon) to DynamoDB-friendly list of dicts with Decimals."""
+    return [
+        {
+            "lat": Decimal(str(p[0])),
+            "lon": Decimal(str(p[1]))
+        }
+        for p in route
+    ]
+
+# Helper to deserialize route from DynamoDB
+def deserialize_route(route_data):
+    """Convert DynamoDB route (list of dicts) to list of (lat, lon) tuples."""
+    if isinstance(route_data, list) and len(route_data) > 0:
+        if isinstance(route_data[0], dict):
+            return [(float(p["lat"]), float(p["lon"])) for p in route_data]
+    return route_data  # fallback if already in tuple format
 
 # =========================================
 # GEOGRAPHY / HUBS
@@ -92,142 +136,594 @@ def build_route_profile(points):
 # =========================================
 @app.post("/start-sim")
 async def start_sim(data: dict):
-    global trucks_state, current_route_polyline, ships_state
+    try:
+        # Clear old simulation data from DynamoDB
+        # Delete all trucks (handle pagination)
+        last_evaluated_key = None
+        while True:
+            if last_evaluated_key:
+                scan_response = table.scan(
+                    ProjectionExpression="truckId",
+                    FilterExpression="begins_with(truckId, :prefix)",
+                    ExpressionAttributeValues={":prefix": "TRUCK-"},
+                    ExclusiveStartKey=last_evaluated_key
+                )
+            else:
+                scan_response = table.scan(
+                    ProjectionExpression="truckId",
+                    FilterExpression="begins_with(truckId, :prefix)",
+                    ExpressionAttributeValues={":prefix": "TRUCK-"}
+                )
+            
+            for item in scan_response.get("Items", []):
+                table.delete_item(Key={"truckId": item["truckId"]})
+            
+            last_evaluated_key = scan_response.get("LastEvaluatedKey")
+            if not last_evaluated_key:
+                break
+        
+        # Delete all ships (handle pagination)
+        last_evaluated_key = None
+        while True:
+            if last_evaluated_key:
+                scan_response = table.scan(
+                    ProjectionExpression="truckId",
+                    FilterExpression="begins_with(truckId, :prefix)",
+                    ExpressionAttributeValues={":prefix": "SHIP-"},
+                    ExclusiveStartKey=last_evaluated_key
+                )
+            else:
+                scan_response = table.scan(
+                    ProjectionExpression="truckId",
+                    FilterExpression="begins_with(truckId, :prefix)",
+                    ExpressionAttributeValues={":prefix": "SHIP-"}
+                )
+            
+            for item in scan_response.get("Items", []):
+                table.delete_item(Key={"truckId": item["truckId"]})
+            
+            last_evaluated_key = scan_response.get("LastEvaluatedKey")
+            if not last_evaluated_key:
+                break
+        
+        # Delete route config
+        try:
+            table.delete_item(Key={"truckId": "ROUTE_CONFIG"})
+        except:
+            pass
 
-    # reset old simulation
-    trucks_state = {}
-    ships_state = {}
+        num_trucks = int(data["numTrucks"])
+        origin_name = data["origin"]
+        dest_name = data["destination"]
+        departure = data["departure"]
 
-    num_trucks = int(data["numTrucks"])
-    origin_name = data["origin"]
-    dest_name = data["destination"]
-    departure = data["departure"]
+        print("START SIM:", num_trucks, origin_name, dest_name, departure)
 
-    print("START SIM:", num_trucks, origin_name, dest_name, departure)
+        # look up coords
+        hubs = {h[0]: (h[1], h[2]) for h in HUBS}
+        
+        if origin_name not in hubs:
+            return {"ok": False, "error": f"Invalid origin: {origin_name}. Available: {list(hubs.keys())}"}
+        if dest_name not in hubs:
+            return {"ok": False, "error": f"Invalid destination: {dest_name}. Available: {list(hubs.keys())}"}
+        if origin_name == dest_name:
+            return {"ok": False, "error": "Origin and destination must be different"}
+        if num_trucks < 1 or num_trucks > 20:
+            return {"ok": False, "error": "Number of trucks must be between 1 and 20"}
+        
+        lat1, lon1 = hubs[origin_name]
+        lat2, lon2 = hubs[dest_name]
 
-    # look up coords
-    hubs = {h[0]: (h[1], h[2]) for h in HUBS}
-    lat1, lon1 = hubs[origin_name]
-    lat2, lon2 = hubs[dest_name]
+        # compute fresh route
+        route = osrm_route(lat1, lon1, lat2, lon2)
+        route_points, cumdist, total_km = build_route_profile(route)
 
-    # compute fresh route
-    route = osrm_route(lat1, lon1, lat2, lon2)
-    route_points, cumdist, total_km = build_route_profile(route)
-
-    # save the route for display
-    current_route_polyline = route_points.copy()
-
-    # create trucks
-    for i in range(num_trucks):
-        tname = f"TRUCK-{i+1}"
-
-        offset_idx = int(len(route_points) * (i * 0.05))
-        offset_idx = min(offset_idx, len(route_points)-1)
-
-        # compute ETA
-        route_data = requests.get(
-            f"https://router.project-osrm.org/route/v1/driving/"
-            f"{lon1},{lat1};{lon2},{lat2}?overview=false"
-        ).json()
-
-        duration_sec = route_data["routes"][0]["duration"]
-        departed_at = datetime.utcnow()
-        eta = departed_at + timedelta(seconds=duration_sec)
-
-        trucks_state[tname] = {
-            "id": tname,
-            "start_name": origin_name,
-            "end_name": dest_name,
-            "route": route_points,
-            "cumdist": cumdist,
-            "total_km": total_km,
-            "idx": offset_idx,
-            "started_at": departed_at.isoformat() + "Z",
-            "eta": eta.isoformat() + "Z",
-            "status": "IN_TRANSIT",
+        # Save route polyline to DynamoDB
+        route_config_item = {
+            "truckId": "ROUTE_CONFIG",
+            "routePolyline": serialize_route(route_points),
+            "timestamp": datetime.utcnow().isoformat() + "Z"
         }
+        table.put_item(Item=route_config_item)
 
-    # initialize ships
-    ships_state = {
-        "SHIP-1": {
-            "id": "SHIP-1",
-            "lat": BASRA_PORT[1] + 0.05,
-            "lon": BASRA_PORT[2] + 0.05,
-            "status": "Inbound",
-        },
-        "SHIP-2": {
-            "id": "SHIP-2",
-            "lat": BASRA_PORT[1] - 0.05,
-            "lon": BASRA_PORT[2] - 0.04,
-            "status": "Anchored",
-        },
-    }
-    asyncio.create_task(simulation_loop())
-    return {"ok": True}
+        # create trucks and save to DynamoDB
+        for i in range(num_trucks):
+            tname = f"TRUCK-{i+1}"
+
+            offset_idx = int(len(route_points) * (i * 0.05))
+            offset_idx = min(offset_idx, len(route_points)-1)
+
+            # Get current position
+            current_pos = route_points[offset_idx]
+
+            # compute ETA
+            departed_at = datetime.utcnow()
+            try:
+                route_data = requests.get(
+                    f"https://router.project-osrm.org/route/v1/driving/"
+                    f"{lon1},{lat1};{lon2},{lat2}?overview=false",
+                    timeout=5
+                ).json()
+                duration_sec = route_data["routes"][0]["duration"]
+                planned_speed_kmh = 0.0
+                try:
+                    planned_speed_kmh = total_km / (duration_sec / 3600.0) if duration_sec > 0 else AVG_TRUCK_SPEED_KMH
+                except Exception:
+                    planned_speed_kmh = AVG_TRUCK_SPEED_KMH
+                eta = departed_at + timedelta(seconds=duration_sec)
+            except:
+                # Fallback: estimate based on distance and average speed
+                hours = total_km / AVG_TRUCK_SPEED_KMH if AVG_TRUCK_SPEED_KMH > 0 else 1
+                eta = departed_at + timedelta(hours=hours)
+
+            # Store cumulative distances as a list
+            cumdist_serialized = [Decimal(str(d)) for d in cumdist]
+
+            truck_item = {
+                "truckId": tname,
+                "start": origin_name,
+                "end": dest_name,
+                "lat": Decimal(str(current_pos[0])),
+                "lon": Decimal(str(current_pos[1])),
+                "route": serialize_route(route_points),
+                "cumdist": cumdist_serialized,
+                "total_km": Decimal(str(total_km)),
+                "idx": offset_idx,
+                "started_at": departed_at.isoformat() + "Z",
+                "eta": eta.isoformat() + "Z",
+                "status": "IN_TRANSIT",
+                "plan_speed_kmh": Decimal(str(planned_speed_kmh)),
+            }
+            table.put_item(Item=truck_item)
+
+        # initialize ships in DynamoDB
+        ships = [
+            {
+                "truckId": "SHIP-1",
+                "lat": Decimal(str(BASRA_PORT[1] + 0.05)),
+                "lon": Decimal(str(BASRA_PORT[2] + 0.05)),
+                "status": "Inbound",
+                "entityType": "SHIP"
+            },
+            {
+                "truckId": "SHIP-2",
+                "lat": Decimal(str(BASRA_PORT[1] - 0.05)),
+                "lon": Decimal(str(BASRA_PORT[2] - 0.04)),
+                "status": "Anchored",
+                "entityType": "SHIP"
+            },
+        ]
+        for ship in ships:
+            table.put_item(Item=ship)
+        
+        # Start simulation loop in background
+        loop_task = asyncio.create_task(simulation_loop())
+        print(f"[START] Simulation started with {num_trucks} trucks from {origin_name} to {dest_name}")
+        return {"ok": True, "message": f"Simulation started with {num_trucks} trucks"}
+    except Exception as e:
+        print(f"Error starting simulation: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"ok": False, "error": str(e)}
 
 
 # =========================================
 # STATE UPDATES
 # =========================================
 def update_trucks():
-    for truck in trucks_state.values():
-        if truck["status"] == "ARRIVED":
+    # Fetch all trucks from DynamoDB (handle pagination)
+    trucks = []
+    last_evaluated_key = None
+    while True:
+        if last_evaluated_key:
+            scan_response = table.scan(
+                FilterExpression="begins_with(truckId, :prefix)",
+                ExpressionAttributeValues={":prefix": "TRUCK-"},
+                ExclusiveStartKey=last_evaluated_key
+            )
+        else:
+            scan_response = table.scan(
+                FilterExpression="begins_with(truckId, :prefix)",
+                ExpressionAttributeValues={":prefix": "TRUCK-"}
+            )
+        
+        trucks.extend(scan_response.get("Items", []))
+        last_evaluated_key = scan_response.get("LastEvaluatedKey")
+        if not last_evaluated_key:
+            break
+    
+    for truck in trucks:
+        if truck.get("status") == "ARRIVED":
             continue
 
-        idx = truck["idx"]
-        if idx >= len(truck["route"]) - 1:
-            truck["status"] = "ARRIVED"
+        idx = int(truck["idx"])
+        route = deserialize_route(truck["route"])
+        
+        if idx >= len(route) - 1:
+            # Mark as arrived
+            table.update_item(
+                Key={"truckId": truck["truckId"]},
+                UpdateExpression="SET #s = :status",
+                ExpressionAttributeValues={":status": "ARRIVED"},
+                ExpressionAttributeNames={"#s": "status"}
+            )
             continue
 
-        truck["idx"] += 1
-
-        if truck["idx"] >= len(truck["route"]) - 1:
-            truck["status"] = "ARRIVED"
+        # Move to next point
+        idx += 1
+        new_pos = route[idx]
+        
+        # Update in DynamoDB
+        if idx >= len(route) - 1:
+            # Mark as arrived
+            table.update_item(
+                Key={"truckId": truck["truckId"]},
+                UpdateExpression="SET idx = :idx, lat = :lat, lon = :lon, #s = :status",
+                ExpressionAttributeValues={
+                    ":idx": idx,
+                    ":lat": Decimal(str(new_pos[0])),
+                    ":lon": Decimal(str(new_pos[1])),
+                    ":status": "ARRIVED"
+                },
+                ExpressionAttributeNames={"#s": "status"}
+            )
+        else:
+            table.update_item(
+                Key={"truckId": truck["truckId"]},
+                UpdateExpression="SET idx = :idx, lat = :lat, lon = :lon",
+                ExpressionAttributeValues={
+                    ":idx": idx,
+                    ":lat": Decimal(str(new_pos[0])),
+                    ":lon": Decimal(str(new_pos[1]))
+                }
+            )
 
 
 def update_ships():
-    for ship in ships_state.values():
-        ship["lat"] += (random.random() - 0.5) * 0.01
-        ship["lon"] += (random.random() - 0.5) * 0.01
+    # Fetch all ships from DynamoDB (handle pagination)
+    ships = []
+    last_evaluated_key = None
+    while True:
+        if last_evaluated_key:
+            scan_response = table.scan(
+                FilterExpression="begins_with(truckId, :prefix)",
+                ExpressionAttributeValues={":prefix": "SHIP-"},
+                ExclusiveStartKey=last_evaluated_key
+            )
+        else:
+            scan_response = table.scan(
+                FilterExpression="begins_with(truckId, :prefix)",
+                ExpressionAttributeValues={":prefix": "SHIP-"}
+            )
+        
+        ships.extend(scan_response.get("Items", []))
+        last_evaluated_key = scan_response.get("LastEvaluatedKey")
+        if not last_evaluated_key:
+            break
+    
+    for ship in ships:
+        current_lat = float(ship["lat"])
+        current_lon = float(ship["lon"])
+        
+        # Update position slightly
+        new_lat = current_lat + (random.random() - 0.5) * 0.01
+        new_lon = current_lon + (random.random() - 0.5) * 0.01
+        
+        # Update in DynamoDB
+        table.update_item(
+            Key={"truckId": ship["truckId"]},
+            UpdateExpression="SET lat = :lat, lon = :lon",
+            ExpressionAttributeValues={
+                ":lat": Decimal(str(new_lat)),
+                ":lon": Decimal(str(new_lon))
+            }
+        )
 
 
 def build_payload():
-    update_trucks()
-    update_ships()
-
     trucks_payload = {}
-    for tid, tr in trucks_state.items():
-        idx = tr["idx"]
-        lat, lon = tr["route"][idx]
-        done = tr["cumdist"][idx]
-        prog = done / tr["total_km"] if tr["total_km"] > 0 else 0.0
+    ships_payload = {}
+    route_polyline = []
 
-        trucks_payload[tid] = {
-            "id": tid,
-            "lat": lat,
-            "lon": lon,
-            "eta": tr["eta"],
-            "status": tr["status"],
-            "start": tr["start_name"],
-            "end": tr["end_name"],
-            "progress": prog,
-        }
+    try:
+        update_trucks()
+        update_ships()
 
-    ships_payload = {
-        sid: {
-            "id": sid,
-            "lat": s["lat"],
-            "lon": s["lon"],
-            "status": s["status"],
-        }
-        for sid, s in ships_state.items()
-    }
+        # =========================
+        # FETCH ALL TRUCKS
+        # =========================
+        trucks = []
+        last_evaluated_key = None
+
+        while True:
+            if last_evaluated_key:
+                scan_response = table.scan(
+                    FilterExpression="begins_with(truckId, :prefix)",
+                    ExpressionAttributeValues={":prefix": "TRUCK-"},
+                    ExclusiveStartKey=last_evaluated_key
+                )
+            else:
+                scan_response = table.scan(
+                    FilterExpression="begins_with(truckId, :prefix)",
+                    ExpressionAttributeValues={":prefix": "TRUCK-"}
+                )
+
+            trucks.extend(scan_response.get("Items", []))
+            last_evaluated_key = scan_response.get("LastEvaluatedKey")
+
+            if not last_evaluated_key:
+                break
+
+        # =========================
+        # PROCESS TRUCKS (NOW OUTSIDE LOOP!)
+        # =========================
+        for truck in trucks:
+            tid = truck["truckId"]
+            idx = int(truck["idx"])
+            route = deserialize_route(truck["route"])
+
+            if idx < len(route):
+                lat, lon = route[idx]
+            else:
+                lat = float(truck["lat"])
+                lon = float(truck["lon"])
+
+            cumdist = [float(d) for d in truck.get("cumdist", [])]
+            total_km = float(truck.get("total_km", 0))
+
+            if idx < len(cumdist) and total_km > 0:
+                done = cumdist[idx]
+                prog = done / total_km
+            else:
+                prog = 0.0
+
+            # ML features
+            plan_speed_kmh = float(truck.get("plan_speed_kmh", AVG_TRUCK_SPEED_KMH))
+            dist_remaining = max(total_km - cumdist[idx], 0) if total_km > 0 and idx < len(cumdist) else 0
+
+            cluster = None
+            delay_risk = None
+
+            if kmeans_model:
+                try:
+                    cluster = int(kmeans_model.predict([[plan_speed_kmh, dist_remaining]])[0])
+                except Exception as e:
+                    print(f"[ML] KMeans error for {tid}: {e}")
+
+            if delay_model:
+                try:
+                    proba = delay_model.predict_proba([[plan_speed_kmh, dist_remaining, 0]])[0]
+                    delay_risk = float(proba[1])
+                except Exception as e:
+                    print(f"[ML] Delay model error for {tid}: {e}")
+
+            trucks_payload[tid] = {
+                "id": tid,
+                "lat": lat,
+                "lon": lon,
+                "eta": truck.get("eta", ""),
+                "status": truck.get("status", "IN_TRANSIT"),
+                "start": truck.get("start", ""),
+                "end": truck.get("end", ""),
+                "progress": prog,
+                "planSpeedKmh": plan_speed_kmh,
+                "distRemaining": dist_remaining,
+                "cluster": cluster,
+                "delayRisk": delay_risk,
+            }
+
+        # =========================
+        # FETCH & PROCESS SHIPS
+        # =========================
+        ships = []
+        last_evaluated_key = None
+
+        while True:
+            if last_evaluated_key:
+                scan_response = table.scan(
+                    FilterExpression="begins_with(truckId, :prefix)",
+                    ExpressionAttributeValues={":prefix": "SHIP-"},
+                    ExclusiveStartKey=last_evaluated_key
+                )
+            else:
+                scan_response = table.scan(
+                    FilterExpression="begins_with(truckId, :prefix)",
+                    ExpressionAttributeValues={":prefix": "SHIP-"}
+                )
+
+            ships.extend(scan_response.get("Items", []))
+            last_evaluated_key = scan_response.get("LastEvaluatedKey")
+
+            if not last_evaluated_key:
+                break
+
+        for ship in ships:
+            sid = ship["truckId"]
+            ships_payload[sid] = {
+                "id": sid,
+                "lat": float(ship["lat"]),
+                "lon": float(ship["lon"]),
+                "status": ship.get("status", "Unknown"),
+            }
+
+        # =========================
+        # ROUTE CONFIG
+        # =========================
+        route_config = table.get_item(Key={"truckId": "ROUTE_CONFIG"})
+        if "Item" in route_config:
+            route_polyline = deserialize_route(route_config["Item"]["routePolyline"])
+
+    except Exception as e:
+        print("[PAYLOAD] Error:", e)
+        import traceback
+        traceback.print_exc()
 
     return {
         "timestamp": datetime.utcnow().isoformat() + "Z",
         "trucks": trucks_payload,
         "ships": ships_payload,
-        "routePolyline": current_route_polyline,
+        "routePolyline": route_polyline,
+        "ports": [{"name": BASRA_PORT[0], "lat": BASRA_PORT[1], "lon": BASRA_PORT[2]}],
+        "depots": [
+            {"name": BAGHDAD_DEPOT[0], "lat": BAGHDAD_DEPOT[1], "lon": BAGHDAD_DEPOT[2]},
+            {"name": MOSUL_DEPOT[0], "lat": MOSUL_DEPOT[1], "lon": MOSUL_DEPOT[2]},
+            {"name": ERBIL_DEPOT[0], "lat": ERBIL_DEPOT[1], "lon": ERBIL_DEPOT[2]},
+            {"name": KIRKUK_DEPOT[0], "lat": KIRKUK_DEPOT[1], "lon": KIRKUK_DEPOT[2]},
+        ],
+    }
+    # Initialize payloads early so they're always defined
+    trucks_payload = {}
+    ships_payload = {}
+    route_polyline = []
+    
+    try:
+        update_trucks()
+        update_ships()
+
+        # Fetch trucks from DynamoDB (handle pagination)
+        trucks = []
+        last_evaluated_key = None
+        while True:
+            if last_evaluated_key:
+                scan_response = table.scan(
+                    FilterExpression="begins_with(truckId, :prefix)",
+                    ExpressionAttributeValues={":prefix": "TRUCK-"},
+                    ExclusiveStartKey=last_evaluated_key
+                )
+            else:
+                scan_response = table.scan(
+                    FilterExpression="begins_with(truckId, :prefix)",
+                    ExpressionAttributeValues={":prefix": "TRUCK-"}
+                )
+            
+            trucks.extend(scan_response.get("Items", []))
+            last_evaluated_key = scan_response.get("LastEvaluatedKey")
+            if not last_evaluated_key:
+                break
+        
+        # Build trucks payload
+        for truck in trucks:
+            tid = truck["truckId"]
+            idx = int(truck["idx"])
+            route = deserialize_route(truck["route"])
+            
+            # Get current position from route
+            if idx < len(route):
+                lat, lon = route[idx]
+            else:
+                lat = float(truck["lat"])
+                lon = float(truck["lon"])
+            
+            # Calculate progress
+            cumdist = [float(d) for d in truck.get("cumdist", [])]
+            total_km = float(truck.get("total_km", 0))
+            if idx < len(cumdist) and total_km > 0:
+                done = cumdist[idx]
+                prog = done / total_km
+            else:
+                prog = 0.0
+
+            # =============================
+            # ML FEATURES (correct indentation!)
+            # =============================
+            plan_speed_kmh = float(truck.get("plan_speed_kmh", AVG_TRUCK_SPEED_KMH))
+
+            dist_remaining = 0.0
+            if total_km > 0 and idx < len(cumdist):
+                dist_remaining = max(total_km - cumdist[idx], 0.0)
+
+            # Defaults
+            cluster = None
+            delay_risk = None
+
+            # Unsupervised: KMeans cluster
+            if kmeans_model is not None:
+                try:
+                    cluster = int(kmeans_model.predict([[plan_speed_kmh, dist_remaining]])[0])
+                except Exception as e:
+                    print(f"[ML] KMeans error for {tid}: {e}")
+
+            # Supervised: logistic regression delay risk
+            stops_feature = 0
+            if delay_model is not None:
+                try:
+                    proba = delay_model.predict_proba([[plan_speed_kmh, dist_remaining, stops_feature]])[0]
+                    delay_risk = float(proba[1])
+                except Exception as e:
+                    print(f"[ML] Delay model error for {tid}: {e}")
+
+            # =============================
+            # FINAL TRUCK PAYLOAD
+            # =============================
+            trucks_payload[tid] = {
+                "id": tid,
+                "lat": lat,
+                "lon": lon,
+                "eta": truck.get("eta", ""),
+                "status": truck.get("status", "IN_TRANSIT"),
+                "start": truck.get("start", ""),
+                "end": truck.get("end", ""),
+                "progress": prog,
+                "planSpeedKmh": plan_speed_kmh,
+                "distRemaining": dist_remaining,
+                "cluster": cluster,
+                "delayRisk": delay_risk,
+            }
+
+        # Fetch ships from DynamoDB (handle pagination)
+        ships = []
+        last_evaluated_key = None
+        while True:
+            if last_evaluated_key:
+                scan_response = table.scan(
+                    FilterExpression="begins_with(truckId, :prefix)",
+                    ExpressionAttributeValues={":prefix": "SHIP-"},
+                    ExclusiveStartKey=last_evaluated_key
+                )
+            else:
+                scan_response = table.scan(
+                    FilterExpression="begins_with(truckId, :prefix)",
+                    ExpressionAttributeValues={":prefix": "SHIP-"}
+                )
+            
+            ships.extend(scan_response.get("Items", []))
+            last_evaluated_key = scan_response.get("LastEvaluatedKey")
+            if not last_evaluated_key:
+                break
+        
+        # Build ships payload
+        for ship in ships:
+            sid = ship["truckId"]
+            ships_payload[sid] = {
+                "id": sid,
+                "lat": float(ship["lat"]),
+                "lon": float(ship["lon"]),
+                "status": ship.get("status", "Unknown"),
+            }
+
+        # Fetch route polyline from DynamoDB
+        try:
+            route_config = table.get_item(Key={"truckId": "ROUTE_CONFIG"})
+            if "Item" in route_config:
+                route_polyline = deserialize_route(route_config["Item"]["routePolyline"])
+            else:
+                route_polyline = []
+        except Exception as e:
+            print(f"[BUILD_PAYLOAD] Error fetching route: {e}")
+            route_polyline = []
+
+    except Exception as e:
+        print(f"[BUILD_PAYLOAD] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        # Continue with empty payloads that were initialized above
+
+    # Return payload (always has valid structure even if errors occurred)
+    return {
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "trucks": trucks_payload,
+        "ships": ships_payload,
+        "routePolyline": route_polyline,
         "ports": [
             {"name": BASRA_PORT[0], "lat": BASRA_PORT[1], "lon": BASRA_PORT[2]}
         ],
@@ -240,28 +736,48 @@ def build_payload():
     }
 
 async def simulation_loop():
-    global trucks_state
-    first_payload = build_payload()
-    for ws in list(connected_clients):
-        try:
-            await ws.send_json(first_payload)
-        except:
-            pass
-
-    while True:
-        update_trucks()
-        update_ships()
-        payload = build_payload()
-
-        dead = []
+    print("[SIM] Starting simulation loop...")
+    try:
+        first_payload = build_payload()
+        print(f"[SIM] First payload: {len(first_payload.get('trucks', {}))} trucks, {len(first_payload.get('ships', {}))} ships")
+        print(f"[SIM] Connected clients: {len(connected_clients)}")
+        
         for ws in list(connected_clients):
             try:
-                await ws.send_json(payload)
-            except:
-                dead.append(ws)
+                await ws.send_json(first_payload)
+                print(f"[SIM] Sent initial payload to client")
+            except Exception as e:
+                print(f"[SIM] Error sending initial payload: {e}")
+    except Exception as e:
+        print(f"[SIM] Error building initial payload: {e}")
+        import traceback
+        traceback.print_exc()
 
-        for ws in dead:
-            connected_clients.remove(ws)
+    loop_count = 0
+    while True:
+        try:
+            # build_payload() already calls update_trucks() and update_ships()
+            payload = build_payload()
+            loop_count += 1
+            
+            if loop_count % 10 == 0:  # Log every 10 iterations
+                print(f"[SIM] Loop #{loop_count}: {len(payload.get('trucks', {}))} trucks, {len(payload.get('ships', {}))} ships, {len(connected_clients)} clients")
+
+            dead = []
+            for ws in list(connected_clients):
+                try:
+                    await ws.send_json(payload)
+                except Exception as e:
+                    print(f"[SIM] Error sending to client: {e}")
+                    dead.append(ws)
+
+            for ws in dead:
+                connected_clients.remove(ws)
+
+        except Exception as e:
+            print(f"[SIM] Error in simulation loop: {e}")
+            import traceback
+            traceback.print_exc()
 
         await asyncio.sleep(1)
 
@@ -272,15 +788,16 @@ async def simulation_loop():
 async def websocket_endpoint(ws: WebSocket):
     await ws.accept()
     connected_clients.add(ws)
+    print(f"[WS] Client connected. Total clients: {len(connected_clients)}")
 
     try:
         while True:
             await asyncio.sleep(1)  # just keep alive
-    except:
-        pass
+    except Exception as e:
+        print(f"[WS] Error in WebSocket: {e}")
     finally:
         connected_clients.remove(ws)
-        print("[WS] disconnected")
+        print(f"[WS] Client disconnected. Remaining clients: {len(connected_clients)}")
 
 
 @app.get("/")
