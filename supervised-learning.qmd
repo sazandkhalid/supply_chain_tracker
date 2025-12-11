@@ -1,0 +1,142 @@
+
+---
+
+## **4.5 `technical-details/supervised-learning.qmd`**
+
+```markdown
+---
+title: "Supervised Learning"
+---
+
+# Supervised Learning
+
+## Introduction to Supervised Learning in the Simulation System
+
+Supervised learning drives predictions in our logistics simulation. Although clustering uncovers hidden patterns and phases across truck activities, prediction relies on past data to estimate what might happen next. Real-world logistics uses forecasting to spot delays, identify problems early, improve resource use, or act ahead of disruptions. To mirror this behavior, the system applies a classification method that judges how likely a truck is to face major delays given its current status.
+
+Introducing a guided prediction feature shifts the simulation beyond basic visual output, turning it into a practical aid for choices - showing how algorithms boost supply planning using modeled information instead of real inputs.
+
+## Defining the Prediction Task: Delay Risk Classification
+The supervised learning task focuses on predicting delay risk, defined as the likelihood that a truck will arrive substantially later than its OSRM-estimated arrival time.
+
+Target Variable (Label)
+We constructed a binary target variable, is_delayed, where:
+
+* 0 = Truck arrived on time or early
+
+* 1 = Truck arrived late beyond a threshold (e.g., ≥ 15% over OSRM ETA)
+
+Because real-world delay labels do not exist in a simulation, we generated labeled data by running multiple simulated journeys and computing actual arrival times versus expected arrival times. This mirrors how organizations bootstrap internal prediction systems without full historical records.
+
+## Training Dataset Construction
+
+To train the supervised model, we generated a dataset consisting of simulated truck journeys running across multiple city pairs with randomized offsets, different OSRM route geometries, and varying average speeds. For each truck, the following features were captured at the beginning of the journey:
+
+Input Features
+| Feature               | Description                                               | Why It Matters                                                                 |
+|-----------------------|-----------------------------------------------------------|----------------------------------------------------------------------------------|
+| Planned Speed (km/h)  | Estimated from OSRM travel time and distance              | Lower planned speeds correlate with difficult routes such as mountainous or urban regions |
+| Distance Remaining (km) | Total kilometers left in the journey at prediction time | Longer routes naturally carry higher uncertainty and increased delay probability |
+| Stops Feature         | Count of simulated mid-route stops (set to 0 in baseline) | Placeholder for future enhancements such as port bottlenecks or roadblocks      |
+
+
+## Model Choice: Logistic Regression
+We selected Logistic Regression as the primary classifier for delay prediction. The model offers several advantages suitable for simulation-based predictive analytics:
+
+* Highly interpretable coefficients
+
+* Efficient to train and very lightweight, enabling microsecond-level inference
+
+* Robust baseline for probabilistic classification
+
+* Well-suited to binary delay vs. non-delay outcomes
+
+Although more complex algorithms (e.g., Random Forests, Gradient Boosting) could offer marginal accuracy improvements, Logistic Regression aligns best with our goals of transparency, speed, and ease of integration with the backend.
+
+## Training Procedure
+1. Data generation
+Multiple runs of the simulation produced a training corpus of journeys with real arrival times and predicted arrival times.
+
+2. Feature engineering
+Numerical features were standardized, and the target variable was computed.
+
+3. Train/test split
+80% of examples were used for training; 20% for testing.
+
+4. Model training
+Logistic Regression was fit using scikit-learn:
+
+model = LogisticRegression()
+model.fit(X_train, y_train)
+
+5. Evaluation metrics
+We evaluated performance using:
+
+* Accuracy
+
+* Precision & Recall
+
+* ROC–AUC
+
+* Confusion Matrix
+
+These metrics quantify how well the model distinguishes between on-time vs. delayed trips.
+
+## Model Deployment and Integration
+After training, the supervised model was serialized using joblib and deployed inside the backend server's /models directory:
+
+delay_model = joblib.load("models/delay_model.pkl")
+During each simulation update cycle, the backend computes real-time features:
+
+* plan_speed_kmh
+
+* dist_remaining
+
+* stops_feature (currently 0)
+
+Then it performs inference:
+
+proba = delay_model.predict_proba([[plan_speed_kmh, dist_remaining, stops_feature]])[0]
+delay_risk = float(proba[1])
+This delayRisk value is added to the WebSocket payload alongside cluster ID and real-time positions.
+
+## Real-Time Application in the Live Simulation
+The supervised model allows the logistics map to display dynamic, predictive insights for every active truck:
+
+* Each truck marker popup shows “Delay Risk: XX.X%”
+
+* Higher probabilities indicate that the truck is statistically more likely to arrive behind schedule
+
+* Operators can visually scan the fleet for trucks posing elevated risk
+
+* Combined with cluster assignment, the system provides both descriptive (cluster) and predictive (risk) intelligence in real time
+
+This mirrors modern predictive logistics systems used by Amazon, DHL, Maersk, and UPS, where ML is embedded directly into operational dashboards.
+
+## Interpretation and Business Relevance
+Although the supervised model uses simulated labels, the approach reflects widely adopted practices in supply-chain intelligence:
+
+* Predictive delay modeling helps allocate resources proactively
+
+* Early warning allows for dynamic rerouting or dispatching backup vehicles
+
+* Risk predictions improve reliability and customer satisfaction
+
+* Provides a scalable foundation for adding more sophisticated ML models later
+
+In our project, the model not only enhances realism but also demonstrates how machine learning integrates into real-time operational decision systems.
+
+## Limitations and Future Extensions
+
+* Because the training labels come from simulations, the model is only as realistic as the assumptions underlying the simulation.
+
+* Additional features (traffic, weather, congestion, road type) would improve predictive fidelity.
+
+* The current stops_feature is a placeholder; implementing real bottlenecks would produce richer patterns.
+
+* More advanced models (Random Forests, Gradient Boosted Trees, Neural Nets) could capture nonlinear relationships.
+
+Despite these limitations, the current system provides a robust foundation that illustrates the value of supervised analytics in a logistics context.
+
+## Conclusion
+The supervised learning component transforms the project from a simple visualization of moving trucks into an intelligent system capable of forecasting operational risks. By predicting delay probabilities in real time, the system showcases how machine learning can meaningfully enhance situational awareness and decision-making in logistics—whether in a simulated environment or a real-world supply chain.

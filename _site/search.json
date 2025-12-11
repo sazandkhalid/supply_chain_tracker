@@ -1,38 +1,374 @@
 [
   {
-    "objectID": "QUICK_START.html",
-    "href": "QUICK_START.html",
-    "title": "Quick Start Guide",
+    "objectID": "progress_log.html",
+    "href": "progress_log.html",
+    "title": "Project Progress Log",
     "section": "",
-    "text": "If you’re seeing CORS errors or WebSocket connection issues, you’re likely opening the HTML file directly (file://). Browsers block local file access for security.\n\n\n\n\n\n# Navigate to the _site directory\ncd _site\n\n# Start a simple HTTP server\npython3 -m http.server 8080\nThen open your browser to: http://localhost:8080/simulate.html\n\n\n\nTerminal 1 - Backend (FastAPI):\n# In the project root directory\nuvicorn server:app --reload --port 8000\nTerminal 2 - Frontend (Web Server):\n# In the _site directory\ncd _site\npython3 -m http.server 8080\nThen: 1. Open browser to: http://localhost:8080/index.html 2. Fill out the simulation form 3. Click “Start Simulation” 4. You’ll be redirected to the live map\n\n\n\nstreamlit run app.py\nThis opens at http://localhost:8501\n\n\n\n\n\nBackend MUST be running on port 8000 before starting simulation\nFrontend MUST be served via HTTP (not file://) for WebSocket to work\nThe WebSocket will automatically connect to ws://localhost:8000/ws when running locally\n\n\n\n\nWebSocket Connection Failed: - Make sure backend is running: uvicorn server:app --reload --port 8000 - Check browser console - it should show Using WebSocket: ws://localhost:8000/ws\nCORS Errors: - Don’t open HTML files directly (file://) - Use a local web server instead (python -m http.server)\nTrucks Not Showing: - Check backend terminal for logs - Check browser console (F12) for errors - Verify DynamoDB is accessible and has data"
+    "text": "Week 1 : Backend Architecture, Simulation Engine, and AWS Integration\nThe first week of the project focused on establishing the foundational architecture required for a real-time logistics simulation platform. We began by defining the overall system design, outlining a pipeline that connects a FastAPI backend simulation engine to an AWS DynamoDB database for persistent storage, and finally to a browser-based frontend powered by Leaflet.js and WebSockets. Once the architecture was set, we implemented the core backend simulation engine using FastAPI and asyncio. This included building the /start-sim endpoint to initialize trips, a WebSocket endpoint for streaming updates to the frontend, and helper modules for routing, geospatial calculations, and time estimation. The simulation logic for both trucks and ships was developed, since trucks follow realistic polyline paths obtained from the OSRM routing API, and ships follow stochastic movements near Basra Port to represent maritime activity.\nA major achievement in Week 1 was integrating AWS DynamoDB as the persistent storage layer. We organized the database to store truck states, ship states, route polylines, cumulative distance calculations, and metadata such as ETAs. We implemented serialization/deserialization helpers using Python’s Decimal type to satisfy DynamoDB’s type system to handle all the errors. Complex logic by the help of LLMs was added to reset simulation state safely using paginated Scan and Delete operations. By the end of the week, the backend was capable of generating realistic simulations, storing data in the cloud, and maintaining consistent state across iterations. This helped lay the foundation for the rest of our project.\n\n\nWeek 2 : Frontend Development, Deployment, and System Stabilization\nWeek 2 transitioned into building and refining the user-facing portion of the project. Using Leaflet.js, we implemented an interactive geospatial map capable of rendering trucks, ships, and routes in real time. Custom icons, popups with metadata, route polylines, and dynamic camera fitting were added to create a polished and intuitive interface. The frontend was connected to the backend WebSocket stream, allowing truck and ship locations to update every second. We also added UI enhancements, such as updated status labels, ETAs, progress tracking, and depot markers.\nIn parallel, we focused on deployment and system reliability. The backend was containerized and deployed to Fly.io, requiring modifications to ensure that FastAPI listened on the correct port (0.0.0.0:8080) and that environment variables for AWS access were properly handled. We also deployed the frontend as a static Quarto website to cPanel, updating JavaScript paths and WebSocket URLs for production. During Week 2, significant debugging was performed to resolve issues such as WebSocket disconnections, CORS restrictions, stale cached JavaScript files, and DynamoDB item type inconsistencies. By the end of the week, the system was fully integrated end-to-end: the frontend map could start a simulation, the backend could generate and update real-time data, and the database accurately stored and streamed operational states.\n\n\nWeek 3 : Machine Learning Integration, Evaluation, and Final Documentation\nThe third week focused on improving the simulation with machine learning and preparing the full analytical and technical documentation. We implemented both unsupervised and supervised learning components as per the project requirement. For unsupervised learning, we created a KMeans clustering model trained on simulated operational features such as planned speed and remaining distance. The model grouped trucks into clusters representing fast, slow, and anomalous behavior patterns. For supervised learning, we generated a labeled dataset and trained a logistic regression model to estimate delay probability based on key trip characteristics. Both models were exported as .pkl files and integrated into the backend pipeline, allowing real-time inference inside the simulation loop. The frontend was updated to display each truck’s cluster assignment and delay risk percentage, completing the ML-enhanced monitoring system.\nSignificant effort in Week 3 was also devoted to debugging ML deployment issues, including dependency mismatches involving NumPy and scikit-learn. Many of the models and fly.io could work on older versions of the libraries. After resolving these issues and rebuilding the deployment image, the system began successfully generating real-time ML predictions. The final portion of the week was spent writing the technical report sections: data collection, data cleaning, EDA, unsupervised learning, supervised learning, system design, and implementation details."
   },
   {
-    "objectID": "QUICK_START.html#the-problem",
-    "href": "QUICK_START.html#the-problem",
-    "title": "Quick Start Guide",
+    "objectID": "DEBUGGING.html",
+    "href": "DEBUGGING.html",
+    "title": "Debugging Guide - Trucks Not Showing on Map",
     "section": "",
-    "text": "If you’re seeing CORS errors or WebSocket connection issues, you’re likely opening the HTML file directly (file://). Browsers block local file access for security."
+    "text": "I’ve added comprehensive debugging to help identify the issue. Follow these steps:\n\n\nWhen you start the server, you should see:\n🔗 Connected to DynamoDB table 'Shipments' in region 'eu-north-1'\nWhen you click “Start Simulation”, look for:\n[START] Simulation started with X trucks from Origin to Destination\n[SIM] Starting simulation loop...\n[SIM] First payload: X trucks, Y ships\n[SIM] Connected clients: 1\n[SIM] Sent initial payload to client\nWhat to check: - Are trucks being created? Look for the count in the log - Are clients connected? Should be at least 1 - Any error messages?\n\n\n\nOpen your browser’s Developer Tools (F12) and check the Console tab.\nExpected logs:\n[WS] Attempting to connect to ws://localhost:8000/ws\n[WS] ✅ Connected to ws://localhost:8000/ws\n[WS] 📨 Received message\n[WS] Data - Trucks: 4 Ships: 2 Route points: 200\n[MAP] Processing 4 trucks\n[MAP] ➕ Creating marker for TRUCK-1 at 30.5081 47.7835\nWhat to check: - Is WebSocket connected? If not, check if server is running - Are trucks in the data? Look for the count - Are markers being created?\n\n\n\n\n\nSymptoms: Console shows [WS] ❌ Error or connection fails Solution: - Make sure server is running: uvicorn server:app --reload --port 8000 - Check if port 8000 is available - If using file:// protocol, start a local server instead\n\n\n\nSymptoms: Console shows [WS] Data - Trucks: 0 Ships: X Solution: - Check backend logs - are trucks being created in DynamoDB? - Verify DynamoDB table exists and is accessible - Check AWS credentials\n\n\n\nSymptoms: Console shows trucks but no markers Solution: - Check for JavaScript errors in console - Verify truck coordinates are valid numbers - Check if Leaflet map is initialized (zoom to see if map loads)\n\n\n\nSymptoms: No logs after initial connection Solution: - The simulation loop should start automatically when you click “Start Simulation” - Check backend logs for errors in simulation_loop() - Verify the /start-sim endpoint was called successfully\n\n\n\n\nTest the endpoints directly:\n# Test if server is running\ncurl http://localhost:8000/\n\n# Test start simulation\ncurl -X POST http://localhost:8000/start-sim \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"numTrucks\": 2, \"origin\": \"Basra Port\", \"destination\": \"Baghdad Depot\", \"departure\": \"2024-01-01T00:00:00\"}'\n\n\n\nVerify data is actually in DynamoDB:\n# List all items with TRUCK prefix\naws dynamodb scan \\\n  --table-name Shipments \\\n  --filter-expression \"begins_with(truckId, :prefix)\" \\\n  --expression-attribute-values '{\":prefix\":{\"S\":\"TRUCK-\"}}' \\\n  --region eu-north-1\nYou should see trucks with IDs like TRUCK-1, TRUCK-2, etc.\n\n\n\nIf trucks still don’t show up: 1. Share the backend server logs 2. Share the browser console output 3. Check if there are any JavaScript errors in the console\nThe debugging output will help identify exactly where the issue is!"
   },
   {
-    "objectID": "QUICK_START.html#solution-run-a-local-web-server",
-    "href": "QUICK_START.html#solution-run-a-local-web-server",
-    "title": "Quick Start Guide",
+    "objectID": "DEBUGGING.html#step-1-check-backend-server-logs",
+    "href": "DEBUGGING.html#step-1-check-backend-server-logs",
+    "title": "Debugging Guide - Trucks Not Showing on Map",
     "section": "",
-    "text": "# Navigate to the _site directory\ncd _site\n\n# Start a simple HTTP server\npython3 -m http.server 8080\nThen open your browser to: http://localhost:8080/simulate.html\n\n\n\nTerminal 1 - Backend (FastAPI):\n# In the project root directory\nuvicorn server:app --reload --port 8000\nTerminal 2 - Frontend (Web Server):\n# In the _site directory\ncd _site\npython3 -m http.server 8080\nThen: 1. Open browser to: http://localhost:8080/index.html 2. Fill out the simulation form 3. Click “Start Simulation” 4. You’ll be redirected to the live map\n\n\n\nstreamlit run app.py\nThis opens at http://localhost:8501"
+    "text": "When you start the server, you should see:\n🔗 Connected to DynamoDB table 'Shipments' in region 'eu-north-1'\nWhen you click “Start Simulation”, look for:\n[START] Simulation started with X trucks from Origin to Destination\n[SIM] Starting simulation loop...\n[SIM] First payload: X trucks, Y ships\n[SIM] Connected clients: 1\n[SIM] Sent initial payload to client\nWhat to check: - Are trucks being created? Look for the count in the log - Are clients connected? Should be at least 1 - Any error messages?"
   },
   {
-    "objectID": "QUICK_START.html#important-notes",
-    "href": "QUICK_START.html#important-notes",
-    "title": "Quick Start Guide",
+    "objectID": "DEBUGGING.html#step-2-check-browser-console",
+    "href": "DEBUGGING.html#step-2-check-browser-console",
+    "title": "Debugging Guide - Trucks Not Showing on Map",
     "section": "",
-    "text": "Backend MUST be running on port 8000 before starting simulation\nFrontend MUST be served via HTTP (not file://) for WebSocket to work\nThe WebSocket will automatically connect to ws://localhost:8000/ws when running locally"
+    "text": "Open your browser’s Developer Tools (F12) and check the Console tab.\nExpected logs:\n[WS] Attempting to connect to ws://localhost:8000/ws\n[WS] ✅ Connected to ws://localhost:8000/ws\n[WS] 📨 Received message\n[WS] Data - Trucks: 4 Ships: 2 Route points: 200\n[MAP] Processing 4 trucks\n[MAP] ➕ Creating marker for TRUCK-1 at 30.5081 47.7835\nWhat to check: - Is WebSocket connected? If not, check if server is running - Are trucks in the data? Look for the count - Are markers being created?"
   },
   {
-    "objectID": "QUICK_START.html#troubleshooting",
-    "href": "QUICK_START.html#troubleshooting",
-    "title": "Quick Start Guide",
+    "objectID": "DEBUGGING.html#step-3-common-issues",
+    "href": "DEBUGGING.html#step-3-common-issues",
+    "title": "Debugging Guide - Trucks Not Showing on Map",
     "section": "",
-    "text": "WebSocket Connection Failed: - Make sure backend is running: uvicorn server:app --reload --port 8000 - Check browser console - it should show Using WebSocket: ws://localhost:8000/ws\nCORS Errors: - Don’t open HTML files directly (file://) - Use a local web server instead (python -m http.server)\nTrucks Not Showing: - Check backend terminal for logs - Check browser console (F12) for errors - Verify DynamoDB is accessible and has data"
+    "text": "Symptoms: Console shows [WS] ❌ Error or connection fails Solution: - Make sure server is running: uvicorn server:app --reload --port 8000 - Check if port 8000 is available - If using file:// protocol, start a local server instead\n\n\n\nSymptoms: Console shows [WS] Data - Trucks: 0 Ships: X Solution: - Check backend logs - are trucks being created in DynamoDB? - Verify DynamoDB table exists and is accessible - Check AWS credentials\n\n\n\nSymptoms: Console shows trucks but no markers Solution: - Check for JavaScript errors in console - Verify truck coordinates are valid numbers - Check if Leaflet map is initialized (zoom to see if map loads)\n\n\n\nSymptoms: No logs after initial connection Solution: - The simulation loop should start automatically when you click “Start Simulation” - Check backend logs for errors in simulation_loop() - Verify the /start-sim endpoint was called successfully"
+  },
+  {
+    "objectID": "DEBUGGING.html#step-4-manual-testing",
+    "href": "DEBUGGING.html#step-4-manual-testing",
+    "title": "Debugging Guide - Trucks Not Showing on Map",
+    "section": "",
+    "text": "Test the endpoints directly:\n# Test if server is running\ncurl http://localhost:8000/\n\n# Test start simulation\ncurl -X POST http://localhost:8000/start-sim \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"numTrucks\": 2, \"origin\": \"Basra Port\", \"destination\": \"Baghdad Depot\", \"departure\": \"2024-01-01T00:00:00\"}'"
+  },
+  {
+    "objectID": "DEBUGGING.html#step-5-check-dynamodb",
+    "href": "DEBUGGING.html#step-5-check-dynamodb",
+    "title": "Debugging Guide - Trucks Not Showing on Map",
+    "section": "",
+    "text": "Verify data is actually in DynamoDB:\n# List all items with TRUCK prefix\naws dynamodb scan \\\n  --table-name Shipments \\\n  --filter-expression \"begins_with(truckId, :prefix)\" \\\n  --expression-attribute-values '{\":prefix\":{\"S\":\"TRUCK-\"}}' \\\n  --region eu-north-1\nYou should see trucks with IDs like TRUCK-1, TRUCK-2, etc."
+  },
+  {
+    "objectID": "DEBUGGING.html#still-having-issues",
+    "href": "DEBUGGING.html#still-having-issues",
+    "title": "Debugging Guide - Trucks Not Showing on Map",
+    "section": "",
+    "text": "If trucks still don’t show up: 1. Share the backend server logs 2. Share the browser console output 3. Check if there are any JavaScript errors in the console\nThe debugging output will help identify exactly where the issue is!"
+  },
+  {
+    "objectID": "ml_env/lib/python3.11/site-packages/numpy/random/LICENSE.html",
+    "href": "ml_env/lib/python3.11/site-packages/numpy/random/LICENSE.html",
+    "title": "NCSA Open Source License",
+    "section": "",
+    "text": "This software is dual-licensed under the The University of Illinois/NCSA Open Source License (NCSA) and The 3-Clause BSD License\n\nNCSA Open Source License\nCopyright (c) 2019 Kevin Sheppard. All rights reserved.\nDeveloped by: Kevin Sheppard (kevin.sheppard@economics.ox.ac.uk, kevin.k.sheppard@gmail.com) http://www.kevinsheppard.com\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the “Software”), to deal with the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:\nRedistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimers.\nRedistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimers in the documentation and/or other materials provided with the distribution.\nNeither the names of Kevin Sheppard, nor the names of any contributors may be used to endorse or promote products derived from this Software without specific prior written permission.\nTHE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE CONTRIBUTORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS WITH THE SOFTWARE.\n\n\n3-Clause BSD License\nCopyright (c) 2019 Kevin Sheppard. All rights reserved.\nRedistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:\n\nRedistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.\nRedistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.\nNeither the name of the copyright holder nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.\n\nTHIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS “AS IS” AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.\n\n\nComponents\nMany parts of this module have been derived from original sources, often the algorithm’s designer. Component licenses are located with the component code."
+  },
+  {
+    "objectID": "llm_usage_log.html",
+    "href": "llm_usage_log.html",
+    "title": "Iraq Logistics Simulator",
+    "section": "",
+    "text": "I used ChatGPT to generate ideas for integrating supervised and unsupervised learning into this project.\n\n\n\nFor writing the report, we mainly wrote it for ourselves. But to keep track of all of the technicalities, we asked ChatGPT if we were missing any technical aspects of our code in the report. We also asked for it to check for grammar and run-on sentences since we wrote these updates as we progressed through the project.\n\n\n\nChat GPT was mainly used to debug the code by adding outputs to the console to log our progress. We also used Chat gpt to write the ReadME file for the github. When I would run into an error, I would ask it to add code to debug. I also asked it organize my code with comments."
+  },
+  {
+    "objectID": "llm_usage_log.html#use-of-chatgpt-in-the-project",
+    "href": "llm_usage_log.html#use-of-chatgpt-in-the-project",
+    "title": "Iraq Logistics Simulator",
+    "section": "",
+    "text": "I used ChatGPT to generate ideas for integrating supervised and unsupervised learning into this project.\n\n\n\nFor writing the report, we mainly wrote it for ourselves. But to keep track of all of the technicalities, we asked ChatGPT if we were missing any technical aspects of our code in the report. We also asked for it to check for grammar and run-on sentences since we wrote these updates as we progressed through the project.\n\n\n\nChat GPT was mainly used to debug the code by adding outputs to the console to log our progress. We also used Chat gpt to write the ReadME file for the github. When I would run into an error, I would ask it to add code to debug. I also asked it organize my code with comments."
+  },
+  {
+    "objectID": "unsupervised-learning.html#technical-detailsunsupervised-learning.qmd",
+    "href": "unsupervised-learning.html#technical-detailsunsupervised-learning.qmd",
+    "title": "Unsupervised Learning",
+    "section": "4.4 technical-details/unsupervised-learning.qmd",
+    "text": "4.4 technical-details/unsupervised-learning.qmd"
+  },
+  {
+    "objectID": "unsupervised-learning.html#markdown",
+    "href": "unsupervised-learning.html#markdown",
+    "title": "Unsupervised Learning",
+    "section": "```markdown",
+    "text": "```markdown"
+  },
+  {
+    "objectID": "unsupervised-learning.html#title-unsupervised-learning",
+    "href": "unsupervised-learning.html#title-unsupervised-learning",
+    "title": "Unsupervised Learning",
+    "section": "title: “Unsupervised Learning”",
+    "text": "title: “Unsupervised Learning”"
+  },
+  {
+    "objectID": "unsupervised-learning.html#introduction-to-unsupervised-learning-in-the-logistics-simulation",
+    "href": "unsupervised-learning.html#introduction-to-unsupervised-learning-in-the-logistics-simulation",
+    "title": "Unsupervised Learning",
+    "section": "Introduction to Unsupervised Learning in the Logistics Simulation",
+    "text": "Introduction to Unsupervised Learning in the Logistics Simulation\nUnsupervised learning helps spot new behavior trends in our simulated logistics setup - using live data instead of pre-labeled results. As the simulation produces constant updates like vehicle speed, location, distance covered, or task completion rates, this method reveals hidden organization in fast-moving streams of detailed information. It’s key for noticing when trips differ from norms, recognizing unusual motion sequences, while grouping vehicles based on how they perform. In our work, it supports ongoing tracking of fleets and improves later predictive systems by adding subtle but useful data cues."
+  },
+  {
+    "objectID": "unsupervised-learning.html#clustering-objective-and-rationale",
+    "href": "unsupervised-learning.html#clustering-objective-and-rationale",
+    "title": "Unsupervised Learning",
+    "section": "Clustering Objective and Rationale",
+    "text": "Clustering Objective and Rationale\nThe goal here is grouping trucks by how they operate throughout a trip. Although every truck moves along the same set path between start and end points, their behaviors aren’t identical - expected speeds change according to OSRM time predictions, left-over distances shift unevenly due to differing departure times, while outside factors like rerouting or minor delays add further differences.\nClustering these operational characteristics helps us answer several important logistical questions:\n\nWhich trucks are progressing unusually slowly or quickly?\nAre there natural groupings of vehicles based on route difficulty or distance remaining?\nCan we detect potential anomalies early by comparing a truck’s behavior to its cluster peers?\nHow do operational factors naturally segment across different routes?\n\nUnsupervised segmentation provides actionable insights even in a simulated setting, aligning closely with industry fleet-monitoring practices."
+  },
+  {
+    "objectID": "unsupervised-learning.html#clustering-methodology-k-means",
+    "href": "unsupervised-learning.html#clustering-methodology-k-means",
+    "title": "Unsupervised Learning",
+    "section": "Clustering Methodology: K-Means",
+    "text": "Clustering Methodology: K-Means\nWe employ K-Means clustering, a widely used algorithm for partitioning numerical data into k distinct groups based on similarity.\nTraining procedure: A dataset of simulated truck journeys was collected across multiple routes.\nFor each logged timestamp, planned_speed_kmh and dist_remaining_km were extracted.\nThe data was normalized (if necessary) to stabilize cluster boundaries.\nK-Means was fit with k = 3, producing the following conceptual clusters:\n\n\n\n\n\n\n\n\nCluster\nInterpretation\nBehavioral Pattern\n\n\n\n\n0 – Long-Distance / Early Journey\nHigh remaining distance, moderate speed\nTruck has just begun its route\n\n\n1 – Mid-Route / Steady State\nModerate distance remaining\nMost trucks spend the longest time here\n\n\n2 – Arrival Phase / Low Distance\nNearly complete\nTruck is close to the depot and progress stabilizes"
+  },
+  {
+    "objectID": "unsupervised-learning.html#real-time-application-in-the-simulation",
+    "href": "unsupervised-learning.html#real-time-application-in-the-simulation",
+    "title": "Unsupervised Learning",
+    "section": "Real-Time Application in the Simulation",
+    "text": "Real-Time Application in the Simulation\nOnce deployed, the trained model is loaded by the backend and applied to each truck every simulation tick:\ncluster = kmeans_model.predict([[plan_speed_kmh, dist_remaining]])[0] The assigned cluster is then included in the WebSocket payload and displayed on the frontend map inside each truck’s information popup.\nThis enables: Live monitoring of fleet behavior\n\nPattern detection (e.g., which clusters appear most often)\nQuick visual segmentation of trucks along the route\nFuture anomaly detection (trucks behaving differently from cluster peers)\n\nEven though this is a simulated environment, the clustering system behaves exactly like one used in real-world fleet analytics."
+  },
+  {
+    "objectID": "unsupervised-learning.html#insights-gained-from-clustering",
+    "href": "unsupervised-learning.html#insights-gained-from-clustering",
+    "title": "Unsupervised Learning",
+    "section": "Insights Gained from Clustering",
+    "text": "Insights Gained from Clustering\nDuring EDA and deployment, clustering revealed several useful insights:\n\nTrucks with longer or more complex OSRM routes tend to fall into higher-distance clusters early on.\nVariability in planned speed often creates distinct cluster boundaries even when trucks are the same distance from the destination.\nThe cluster IDs provide a simple but effective indicator of operational phase: beginning, middle, or near completion.\nThese cluster features became important inputs to subsequent supervised models (e.g., predicting delay risk)."
+  },
+  {
+    "objectID": "unsupervised-learning.html#limitations-and-considerations",
+    "href": "unsupervised-learning.html#limitations-and-considerations",
+    "title": "Unsupervised Learning",
+    "section": "Limitations and Considerations",
+    "text": "Limitations and Considerations\nWhile K-Means is simple and effective, several limitations need to be acknowledged:\n\nClusters are spherical and may not capture nonlinear route behaviors.\nSynthetic data reduces variability, which can make clusters appear cleaner than in reality.\nThe model must be retrained if new features are introduced or if simulation behavior changes drastically.\nScaling issues may arise if the feature magnitudes differ significantly.\n\nIn future extensions, more advanced unsupervised methods—such as DBSCAN for anomaly detection or Gaussian Mixture Models for probabilistic segmentation—could enrich system insights."
+  },
+  {
+    "objectID": "unsupervised-learning.html#conclusion",
+    "href": "unsupervised-learning.html#conclusion",
+    "title": "Unsupervised Learning",
+    "section": "Conclusion",
+    "text": "Conclusion\nUsing unsupervised methods helped uncover hidden patterns in the simulated delivery data. Because trucks were grouped by target speed and left-over distance, insights became clearer during live operation. Such grouping links actual simulation output with later prediction models that rely on labeled examples."
+  },
+  {
+    "objectID": "simulate.html",
+    "href": "simulate.html",
+    "title": "Live Truck Simulation",
+    "section": "",
+    "text": "Live Logistics Control Tower\n\nنحن نوفر معلومات فورية لمسارات الشحن وتوقعات دقيقة لمواعيد الوصول في عمليات النقل البري والموانئ داخل العراق"
+  },
+  {
+    "objectID": "data-collection.html",
+    "href": "data-collection.html",
+    "title": "Data Collection",
+    "section": "",
+    "text": "This project skips outside data sources altogether - rather, it builds its own made-up stream of logistics events that mirror cargo flows through Iraq. Its aim is to craft a repeatable flow of location-tagged records updated fast enough for live tracking, pattern spotting without labels, training models with examples, or predicting daily operations.\nAll created data flows straight into AWS DynamoDB, where it’s saved and later pulled from; this database runs the show for analysis, visuals, or training smart systems. Everything works through code. This way, each phase starting from making events up to saving and grabbing them back, can be repeated exactly when needed.\n\n\n\nAll simulation info comes from a Python event engine (server.py), then lands in an AWS DynamoDB table named Shipments - this holds everything live. Instead of just saving records, it keeps trucks, vessels, paths, total miles, forecast feautures, pand all other active simulation entities; at the same time, it streams updates to a WebSocket-powered front end and feeds traits into ML guesses like KMeans groups delay-risk predictions. It runs on DynamoDB inside eu-north-1, sorting entries by truckId up top. Several types of synthetic data are produced by the simulation layer, including truck movement events created by stepping through OSRM-generated routes, ship movement events based on random GPS jitter, full polyline route geometries obtained through the OSRM API, cumulative distance profiles computed using the haversine formula, and machine learning features such as delay probabilities generated by pretrained sklearn models. The only external data dependency is the Open Source Routing Machine (OSRM) API, which provides realistic drivable routes in Iraq by returning full road polylines, true route lengths, and geometry needed for accurate ETA estimation.\n\n\n\nThe project does not scrape or fetch static datasets. Instead, it implements a real-time streaming data generator that emits events every second.\n\n\nWhen the user clicks Start Simulation, the backend:\n\nReads user parameters\n\n\nNumber of trucks\nOrigin hub\nDestination hub\nDeparture time\n\n\nComputes optimal route Calls OSRM to obtain:\n\n\nPolyline coordinates\nTotal route length\nEstimated travel duration\n\n\nInitializes all trucks Each truck is saved to DynamoDB with:\n\n\ntruckId\nstart, end\nlat, lon\nroute (full polyline, serialized for DynamoDB)\ncumdist (cumulative distance array)\ntotal_km\nidx (route pointer)\nETA, status, etc.\n\n\nStarts the streaming simulation loop Every second:\n\n\nTrucks advance along the route polyline\nShips drift randomly\nML inference is computed (cluster + delay risk)\nAll updates are written to DynamoDB\n\nUpdated state is broadcast to the frontend via WebSocket (/ws)\n\n\n\n\nFastAPI — backend server + WebSocket streaming\nboto3 — DynamoDB read/write operations\nrequests — OSRM routing calls\nasyncio — high-frequency simulation loop\njoblib — loading ML models\n\nAll data collection logic exists in server.py, ensuring full reproducibility.\n\n\n\n\nEvery record stored in DynamoDB follows a consistent JSON-serializable schema. Example truck record:\n{ “truckId”: “TRUCK-1”, “start”: “Basra Port”, “end”: “Baghdad Depot”, “lat”: 31.2044, “lon”: 46.8091, “route”: [ {“lat”: 30.5081, “lon”: 47.7835}, {“lat”: 30.61, “lon”: 47.12}, … ], “cumdist”: [0, 1.2, 2.8, …], “total_km”: 545.3, “idx”: 42, “eta”: “2025-12-10T19:50:00Z”, “status”: “IN_TRANSIT”, “plan_speed_kmh”: 78.2, “cluster”: 1, “delayRisk”: 0.32 }\nData Formats used:\n\n\n\nComponent\nFormat\n\n\n\n\nTruck and ship data\nJSON records stored in DynamoDB\n\n\nRoute geometry\nGeoJSON from OSRM, stored as list of points\n\n\nWebSocket packets\nJSON\n\n\nML models\n.pkl (joblib)\n\n\n\n\n\n\n\n\n\nThe entire pipeline, from event generation to machine learning inference, is fully open, deterministic, and well-documented, ensuring complete transparency throughout the system. The use of synthetic yet realistic simulation logic, deterministic routing from OSRM, traceable event updates, reproducible ML inference via static .pkl models, and publicly accessible backend, frontend, and ML code allows every step of the workflow to be replicated without ambiguity. This means that anyone can reproduce the simulation logic, rebuild the DynamoDB dataset, rerun the clustering and delay risk models, and recreate the live geospatial visualizations exactly as demonstrated. Together, these elements satisfy all requirements for reproducibility and open technical methodology."
+  },
+  {
+    "objectID": "data-collection.html#overview",
+    "href": "data-collection.html#overview",
+    "title": "Data Collection",
+    "section": "",
+    "text": "This project skips outside data sources altogether - rather, it builds its own made-up stream of logistics events that mirror cargo flows through Iraq. Its aim is to craft a repeatable flow of location-tagged records updated fast enough for live tracking, pattern spotting without labels, training models with examples, or predicting daily operations.\nAll created data flows straight into AWS DynamoDB, where it’s saved and later pulled from; this database runs the show for analysis, visuals, or training smart systems. Everything works through code. This way, each phase starting from making events up to saving and grabbing them back, can be repeated exactly when needed."
+  },
+  {
+    "objectID": "data-collection.html#data-source-information",
+    "href": "data-collection.html#data-source-information",
+    "title": "Data Collection",
+    "section": "",
+    "text": "All simulation info comes from a Python event engine (server.py), then lands in an AWS DynamoDB table named Shipments - this holds everything live. Instead of just saving records, it keeps trucks, vessels, paths, total miles, forecast feautures, pand all other active simulation entities; at the same time, it streams updates to a WebSocket-powered front end and feeds traits into ML guesses like KMeans groups delay-risk predictions. It runs on DynamoDB inside eu-north-1, sorting entries by truckId up top. Several types of synthetic data are produced by the simulation layer, including truck movement events created by stepping through OSRM-generated routes, ship movement events based on random GPS jitter, full polyline route geometries obtained through the OSRM API, cumulative distance profiles computed using the haversine formula, and machine learning features such as delay probabilities generated by pretrained sklearn models. The only external data dependency is the Open Source Routing Machine (OSRM) API, which provides realistic drivable routes in Iraq by returning full road polylines, true route lengths, and geometry needed for accurate ETA estimation."
+  },
+  {
+    "objectID": "data-collection.html#data-collection-methods",
+    "href": "data-collection.html#data-collection-methods",
+    "title": "Data Collection",
+    "section": "",
+    "text": "The project does not scrape or fetch static datasets. Instead, it implements a real-time streaming data generator that emits events every second.\n\n\nWhen the user clicks Start Simulation, the backend:\n\nReads user parameters\n\n\nNumber of trucks\nOrigin hub\nDestination hub\nDeparture time\n\n\nComputes optimal route Calls OSRM to obtain:\n\n\nPolyline coordinates\nTotal route length\nEstimated travel duration\n\n\nInitializes all trucks Each truck is saved to DynamoDB with:\n\n\ntruckId\nstart, end\nlat, lon\nroute (full polyline, serialized for DynamoDB)\ncumdist (cumulative distance array)\ntotal_km\nidx (route pointer)\nETA, status, etc.\n\n\nStarts the streaming simulation loop Every second:\n\n\nTrucks advance along the route polyline\nShips drift randomly\nML inference is computed (cluster + delay risk)\nAll updates are written to DynamoDB\n\nUpdated state is broadcast to the frontend via WebSocket (/ws)\n\n\n\n\nFastAPI — backend server + WebSocket streaming\nboto3 — DynamoDB read/write operations\nrequests — OSRM routing calls\nasyncio — high-frequency simulation loop\njoblib — loading ML models\n\nAll data collection logic exists in server.py, ensuring full reproducibility."
+  },
+  {
+    "objectID": "data-collection.html#data-structure-and-format",
+    "href": "data-collection.html#data-structure-and-format",
+    "title": "Data Collection",
+    "section": "",
+    "text": "Every record stored in DynamoDB follows a consistent JSON-serializable schema. Example truck record:\n{ “truckId”: “TRUCK-1”, “start”: “Basra Port”, “end”: “Baghdad Depot”, “lat”: 31.2044, “lon”: 46.8091, “route”: [ {“lat”: 30.5081, “lon”: 47.7835}, {“lat”: 30.61, “lon”: 47.12}, … ], “cumdist”: [0, 1.2, 2.8, …], “total_km”: 545.3, “idx”: 42, “eta”: “2025-12-10T19:50:00Z”, “status”: “IN_TRANSIT”, “plan_speed_kmh”: 78.2, “cluster”: 1, “delayRisk”: 0.32 }\nData Formats used:\n\n\n\nComponent\nFormat\n\n\n\n\nTruck and ship data\nJSON records stored in DynamoDB\n\n\nRoute geometry\nGeoJSON from OSRM, stored as list of points\n\n\nWebSocket packets\nJSON\n\n\nML models\n.pkl (joblib)"
+  },
+  {
+    "objectID": "data-collection.html#transparency-and-replicability",
+    "href": "data-collection.html#transparency-and-replicability",
+    "title": "Data Collection",
+    "section": "",
+    "text": "The entire pipeline, from event generation to machine learning inference, is fully open, deterministic, and well-documented, ensuring complete transparency throughout the system. The use of synthetic yet realistic simulation logic, deterministic routing from OSRM, traceable event updates, reproducible ML inference via static .pkl models, and publicly accessible backend, frontend, and ML code allows every step of the workflow to be replicated without ambiguity. This means that anyone can reproduce the simulation logic, rebuild the DynamoDB dataset, rerun the clustering and delay risk models, and recreate the live geospatial visualizations exactly as demonstrated. Together, these elements satisfy all requirements for reproducibility and open technical methodology."
+  },
+  {
+    "objectID": "supervised-learning.html#technical-detailssupervised-learning.qmd",
+    "href": "supervised-learning.html#technical-detailssupervised-learning.qmd",
+    "title": "Supervised Learning",
+    "section": "4.5 technical-details/supervised-learning.qmd",
+    "text": "4.5 technical-details/supervised-learning.qmd"
+  },
+  {
+    "objectID": "supervised-learning.html#markdown",
+    "href": "supervised-learning.html#markdown",
+    "title": "Supervised Learning",
+    "section": "```markdown",
+    "text": "```markdown"
+  },
+  {
+    "objectID": "supervised-learning.html#title-supervised-learning",
+    "href": "supervised-learning.html#title-supervised-learning",
+    "title": "Supervised Learning",
+    "section": "title: “Supervised Learning”",
+    "text": "title: “Supervised Learning”"
+  },
+  {
+    "objectID": "supervised-learning.html#introduction-to-supervised-learning-in-the-simulation-system",
+    "href": "supervised-learning.html#introduction-to-supervised-learning-in-the-simulation-system",
+    "title": "Supervised Learning",
+    "section": "Introduction to Supervised Learning in the Simulation System",
+    "text": "Introduction to Supervised Learning in the Simulation System\nSupervised learning drives predictions in our logistics simulation. Although clustering uncovers hidden patterns and phases across truck activities, prediction relies on past data to estimate what might happen next. Real-world logistics uses forecasting to spot delays, identify problems early, improve resource use, or act ahead of disruptions. To mirror this behavior, the system applies a classification method that judges how likely a truck is to face major delays given its current status.\nIntroducing a guided prediction feature shifts the simulation beyond basic visual output, turning it into a practical aid for choices - showing how algorithms boost supply planning using modeled information instead of real inputs."
+  },
+  {
+    "objectID": "supervised-learning.html#defining-the-prediction-task-delay-risk-classification",
+    "href": "supervised-learning.html#defining-the-prediction-task-delay-risk-classification",
+    "title": "Supervised Learning",
+    "section": "Defining the Prediction Task: Delay Risk Classification",
+    "text": "Defining the Prediction Task: Delay Risk Classification\nThe supervised learning task focuses on predicting delay risk, defined as the likelihood that a truck will arrive substantially later than its OSRM-estimated arrival time.\nTarget Variable (Label) We constructed a binary target variable, is_delayed, where:\n\n0 = Truck arrived on time or early\n1 = Truck arrived late beyond a threshold (e.g., ≥ 15% over OSRM ETA)\n\nBecause real-world delay labels do not exist in a simulation, we generated labeled data by running multiple simulated journeys and computing actual arrival times versus expected arrival times. This mirrors how organizations bootstrap internal prediction systems without full historical records."
+  },
+  {
+    "objectID": "supervised-learning.html#training-dataset-construction",
+    "href": "supervised-learning.html#training-dataset-construction",
+    "title": "Supervised Learning",
+    "section": "Training Dataset Construction",
+    "text": "Training Dataset Construction\nTo train the supervised model, we generated a dataset consisting of simulated truck journeys running across multiple city pairs with randomized offsets, different OSRM route geometries, and varying average speeds. For each truck, the following features were captured at the beginning of the journey:\nInput Features | Feature | Description | Why It Matters | |———————–|———————————————————–|———————————————————————————-| | Planned Speed (km/h) | Estimated from OSRM travel time and distance | Lower planned speeds correlate with difficult routes such as mountainous or urban regions | | Distance Remaining (km) | Total kilometers left in the journey at prediction time | Longer routes naturally carry higher uncertainty and increased delay probability | | Stops Feature | Count of simulated mid-route stops (set to 0 in baseline) | Placeholder for future enhancements such as port bottlenecks or roadblocks |"
+  },
+  {
+    "objectID": "supervised-learning.html#model-choice-logistic-regression",
+    "href": "supervised-learning.html#model-choice-logistic-regression",
+    "title": "Supervised Learning",
+    "section": "Model Choice: Logistic Regression",
+    "text": "Model Choice: Logistic Regression\nWe selected Logistic Regression as the primary classifier for delay prediction. The model offers several advantages suitable for simulation-based predictive analytics:\n\nHighly interpretable coefficients\nEfficient to train and very lightweight, enabling microsecond-level inference\nRobust baseline for probabilistic classification\nWell-suited to binary delay vs. non-delay outcomes\n\nAlthough more complex algorithms (e.g., Random Forests, Gradient Boosting) could offer marginal accuracy improvements, Logistic Regression aligns best with our goals of transparency, speed, and ease of integration with the backend."
+  },
+  {
+    "objectID": "supervised-learning.html#training-procedure",
+    "href": "supervised-learning.html#training-procedure",
+    "title": "Supervised Learning",
+    "section": "Training Procedure",
+    "text": "Training Procedure\n\nData generation Multiple runs of the simulation produced a training corpus of journeys with real arrival times and predicted arrival times.\nFeature engineering Numerical features were standardized, and the target variable was computed.\nTrain/test split 80% of examples were used for training; 20% for testing.\nModel training Logistic Regression was fit using scikit-learn:\n\nmodel = LogisticRegression() model.fit(X_train, y_train)\n\nEvaluation metrics We evaluated performance using:\n\n\nAccuracy\nPrecision & Recall\nROC–AUC\nConfusion Matrix\n\nThese metrics quantify how well the model distinguishes between on-time vs. delayed trips."
+  },
+  {
+    "objectID": "supervised-learning.html#model-deployment-and-integration",
+    "href": "supervised-learning.html#model-deployment-and-integration",
+    "title": "Supervised Learning",
+    "section": "Model Deployment and Integration",
+    "text": "Model Deployment and Integration\nAfter training, the supervised model was serialized using joblib and deployed inside the backend server’s /models directory:\ndelay_model = joblib.load(“models/delay_model.pkl”) During each simulation update cycle, the backend computes real-time features:\n\nplan_speed_kmh\ndist_remaining\nstops_feature (currently 0)\n\nThen it performs inference:\nproba = delay_model.predict_proba([[plan_speed_kmh, dist_remaining, stops_feature]])[0] delay_risk = float(proba[1]) This delayRisk value is added to the WebSocket payload alongside cluster ID and real-time positions."
+  },
+  {
+    "objectID": "supervised-learning.html#real-time-application-in-the-live-simulation",
+    "href": "supervised-learning.html#real-time-application-in-the-live-simulation",
+    "title": "Supervised Learning",
+    "section": "Real-Time Application in the Live Simulation",
+    "text": "Real-Time Application in the Live Simulation\nThe supervised model allows the logistics map to display dynamic, predictive insights for every active truck:\n\nEach truck marker popup shows “Delay Risk: XX.X%”\nHigher probabilities indicate that the truck is statistically more likely to arrive behind schedule\nOperators can visually scan the fleet for trucks posing elevated risk\nCombined with cluster assignment, the system provides both descriptive (cluster) and predictive (risk) intelligence in real time\n\nThis mirrors modern predictive logistics systems used by Amazon, DHL, Maersk, and UPS, where ML is embedded directly into operational dashboards."
+  },
+  {
+    "objectID": "supervised-learning.html#interpretation-and-business-relevance",
+    "href": "supervised-learning.html#interpretation-and-business-relevance",
+    "title": "Supervised Learning",
+    "section": "Interpretation and Business Relevance",
+    "text": "Interpretation and Business Relevance\nAlthough the supervised model uses simulated labels, the approach reflects widely adopted practices in supply-chain intelligence:\n\nPredictive delay modeling helps allocate resources proactively\nEarly warning allows for dynamic rerouting or dispatching backup vehicles\nRisk predictions improve reliability and customer satisfaction\nProvides a scalable foundation for adding more sophisticated ML models later\n\nIn our project, the model not only enhances realism but also demonstrates how machine learning integrates into real-time operational decision systems."
+  },
+  {
+    "objectID": "supervised-learning.html#limitations-and-future-extensions",
+    "href": "supervised-learning.html#limitations-and-future-extensions",
+    "title": "Supervised Learning",
+    "section": "Limitations and Future Extensions",
+    "text": "Limitations and Future Extensions\n\nBecause the training labels come from simulations, the model is only as realistic as the assumptions underlying the simulation.\nAdditional features (traffic, weather, congestion, road type) would improve predictive fidelity.\nThe current stops_feature is a placeholder; implementing real bottlenecks would produce richer patterns.\nMore advanced models (Random Forests, Gradient Boosted Trees, Neural Nets) could capture nonlinear relationships.\n\nDespite these limitations, the current system provides a robust foundation that illustrates the value of supervised analytics in a logistics context."
+  },
+  {
+    "objectID": "supervised-learning.html#conclusion",
+    "href": "supervised-learning.html#conclusion",
+    "title": "Supervised Learning",
+    "section": "Conclusion",
+    "text": "Conclusion\nThe supervised learning component transforms the project from a simple visualization of moving trucks into an intelligent system capable of forecasting operational risks. By predicting delay probabilities in real time, the system showcases how machine learning can meaningfully enhance situational awareness and decision-making in logistics—whether in a simulated environment or a real-world supply chain."
+  },
+  {
+    "objectID": "data-cleaning.html#technical-detailsdata-cleaning.qmd",
+    "href": "data-cleaning.html#technical-detailsdata-cleaning.qmd",
+    "title": "Data Cleaning and Preprocessing",
+    "section": "4.2 technical-details/data-cleaning.qmd",
+    "text": "4.2 technical-details/data-cleaning.qmd"
+  },
+  {
+    "objectID": "data-cleaning.html#markdown",
+    "href": "data-cleaning.html#markdown",
+    "title": "Data Cleaning and Preprocessing",
+    "section": "```markdown",
+    "text": "```markdown"
+  },
+  {
+    "objectID": "data-cleaning.html#title-data-cleaning",
+    "href": "data-cleaning.html#title-data-cleaning",
+    "title": "Data Cleaning and Preprocessing",
+    "section": "title: “Data Cleaning”",
+    "text": "title: “Data Cleaning”"
+  },
+  {
+    "objectID": "data-cleaning.html#introduction-to-data-cleaning",
+    "href": "data-cleaning.html#introduction-to-data-cleaning",
+    "title": "Data Cleaning and Preprocessing",
+    "section": "Introduction to Data Cleaning",
+    "text": "Introduction to Data Cleaning\nThe data cleaning step is key to getting our simulated logistics info ready for exploration, modeling, or live visuals. Although we create fake events instead of pulling outside data, the stream setup still brings familiar issues, like mismatched layouts, blank entries, broken location points, or timing gaps. So cleanup turns into a repeating task, adjusting as simulations change, fresh ML traits appear, while analysis targets move. During building, this clean-up flow got reviewed again and again, making sure outputs stayed self-consistent, mathematically sound, and fit for DynamoDB rules along with later-stage ML tools."
+  },
+  {
+    "objectID": "data-cleaning.html#managing-missing-data",
+    "href": "data-cleaning.html#managing-missing-data",
+    "title": "Data Cleaning and Preprocessing",
+    "section": "Managing Missing Data",
+    "text": "Managing Missing Data\nBecause the system depends on asynchronous - like OSRM calls, sim-loop state changes, or DynamoDB saves - some data gaps showed up during tests. Missing values were identified through validation rules embedded directly in the backend. If an OSRM call dropped, for instance, the lack of path shape activated a backup straight-line router. Likewise, absent distance or speed values got caught either at truck start-up or while pulling records from DynamoDB later in the cycle.\nTo tackle these problems, we set up automatic backup options. When coordinates are absent, the system uses direct path estimation - while gaps in speed data fall back on a standard truck rate of 80 km/h. Estimated arrival times get recalculated whenever needed based on leftover distance and adjusted velocity figures. Since processing runs non-stop, no records are deleted; rather, reliable placeholder values keep operations stable. Instead of typical heatmap tools for spotting blanks, our model logs such events directly, noting each time defaults activate - giving engineers clear insight into performance."
+  },
+  {
+    "objectID": "data-cleaning.html#outlier-detection-and-treatment",
+    "href": "data-cleaning.html#outlier-detection-and-treatment",
+    "title": "Data Cleaning and Preprocessing",
+    "section": "Outlier Detection and Treatment",
+    "text": "Outlier Detection and Treatment\nIn simulations, outliers in data often come from math mistakes instead of actual freal-world anomalies. For instance, OSRM might sometimes suggest unusually long route bends; similarly, ship GPS noise can generate positions beyond normal sea zones. To assess these cases, we tracked total distance patterns per planned path while ensuring truck and vessel movements stayed inside typical limits. If sudden big shifts appeared - like a marine unit jumping over half a degree in lat or lon during one reading - the model adjusted those figures to acceptable levels.\nDue to outliers affecting plot precision along with model input quality, adjustments are made instead of deletions. During building stages, evaluations resembling box plots confirmed total distance trends rose steadily, while step-by-step gaps stayed inside plausible limits. Such built-in validations stop irregular points from entering outputs meant for display or analysis."
+  },
+  {
+    "objectID": "data-cleaning.html#data-type-correction-and-formatting",
+    "href": "data-cleaning.html#data-type-correction-and-formatting",
+    "title": "Data Cleaning and Preprocessing",
+    "section": "Data Type Correction and Formatting",
+    "text": "Data Type Correction and Formatting\nA large part of prep work focused on keeping data types uniform throughout the system. Because DynamoDB needs numbers as Decimal objects instead of Python floats, every value for latitude, longitude, distance, or speed was carefully transformed using conditional checks prior to entry. Timestamps like started_at or eta were adjusted into ISO 8601 format through dedicated formatting rules so different parts of the application - backend, frontend, even third-party tools - could reliably use them.\nGeospatial data needed precise type adjustments: since OSRM delivers coordinates as [lon, lat], these were restructured into (lat, lon) pairs. Instead of keeping route outputs as dictionary lists, they became standard Python tuples once simulations updated. Consistent format use ensures number-sensitive tasks - like estimating arrival times, gauging leftover distances, or creating machine learning features - run without errors."
+  },
+  {
+    "objectID": "data-cleaning.html#normalization-and-scaling",
+    "href": "data-cleaning.html#normalization-and-scaling",
+    "title": "Data Cleaning and Preprocessing",
+    "section": "Normalization and Scaling",
+    "text": "Normalization and Scaling\nEven artificial data works better with normalization, particularly in machine learning contexts. Prior to integrating ML predictions into the simulation process, we checked how main inputs - like intended speed, leftover distance, or total advancement - were spread out. Leftover distance, for instance, tends to cluster low early on, then shifts toward higher values nearing destination. So that methods such as K-Means grouping and logistic prediction would run smoothly, we adjusted feature scales via z-scores while training models.\nDespite small runtime adjustments in the simulation to reduce extra load, checks ensure inputs stay within normal number limits. During training, visual analysis of data before and after scaling showed extreme values didn’t skew results - either for grouping or labeling patterns."
+  },
+  {
+    "objectID": "data-cleaning.html#subsetting-the-data",
+    "href": "data-cleaning.html#subsetting-the-data",
+    "title": "Data Cleaning and Preprocessing",
+    "section": "Subsetting the Data",
+    "text": "Subsetting the Data\nFor analysis and modeling, not all simulated fields were necessary. We subset the data to focus on features most relevant to our machine learning objectives:\n\nplanned_speed_kmh (continuous)\ndist_remaining (continuous)\nstop_count (engineered categorical, currently zero in the simulation)\narrival_status (binary classification label for supervised training)\n\nBy filtering down to these variables, we reduced dimensionality and ensured that the models learned from data directly tied to operational performance. Additional fields such as raw coordinates, route polyline data, and cumulative distances were retained only for visualization and geospatial logic. This separation allowed the ML models to operate efficiently without being influenced by large, high-granularity geospatial structures.\nBy filtering down to these variables, we reduced dimensionality while keeping inputs closely linked to real-world operations. Aside from those, details like GPS points, path lines, or total distance stayed in use - but just for maps and location-based functions. Thanks to this split, machine learning tools ran faster, avoiding interference from dense spatial datasets.\nThe subsetting process preserves a clean distinction between:\n\nHigh-frequency spatial data (used for the map)\nLow-dimensional operational data (used for ML)\n\nThis distinction helps keep the ML component lightweight and interpretable while maintaining full simulation fidelity."
+  },
+  {
+    "objectID": "index.html",
+    "href": "index.html",
+    "title": "Shipment Setup",
+    "section": "",
+    "text": "Fill the form below to create your simulation.\n\n\nNumber of shipments (trucks): \n\n\nOrigin Port:  Basra Port \n\n\nDestination:  Baghdad Depot Mosul Depot Erbil Depot Kirkuk Depot \n\n\nDeparture Time: \n\n\nStart Simulation"
+  },
+  {
+    "objectID": "index.html#iraq-truck-shipment-setup",
+    "href": "index.html#iraq-truck-shipment-setup",
+    "title": "Shipment Setup",
+    "section": "",
+    "text": "Fill the form below to create your simulation.\n\n\nNumber of shipments (trucks): \n\n\nOrigin Port:  Basra Port \n\n\nDestination:  Baghdad Depot Mosul Depot Erbil Depot Kirkuk Depot \n\n\nDeparture Time: \n\n\nStart Simulation"
+  },
+  {
+    "objectID": "report.html#markdown",
+    "href": "report.html#markdown",
+    "title": "📝 report.qmd – Full Written Report",
+    "section": "```markdown",
+    "text": "```markdown\ntitle: “End-to-End Report” format: html —"
   },
   {
     "objectID": "RUN_INSTRUCTIONS.html",
@@ -84,73 +420,38 @@
     "text": "For production, consider: - Using environment variables for AWS credentials - Setting up proper CORS origins instead of [\"*\"] - Using a production ASGI server like Gunicorn with uvicorn workers - Setting up proper logging and monitoring"
   },
   {
-    "objectID": "simulate.html",
-    "href": "simulate.html",
-    "title": "Live Truck Simulation",
+    "objectID": "QUICK_START.html",
+    "href": "QUICK_START.html",
+    "title": "Quick Start Guide",
     "section": "",
-    "text": "Live Logistics Control Tower\n\nنحن نوفر معلومات فورية لمسارات الشحن وتوقعات دقيقة لمواعيد الوصول في عمليات النقل البري والموانئ داخل العراق"
+    "text": "If you’re seeing CORS errors or WebSocket connection issues, you’re likely opening the HTML file directly (file://). Browsers block local file access for security.\n\n\n\n\n\n# Navigate to the _site directory\ncd _site\n\n# Start a simple HTTP server\npython3 -m http.server 8080\nThen open your browser to: http://localhost:8080/simulate.html\n\n\n\nTerminal 1 - Backend (FastAPI):\n# In the project root directory\nuvicorn server:app --reload --port 8000\nTerminal 2 - Frontend (Web Server):\n# In the _site directory\ncd _site\npython3 -m http.server 8080\nThen: 1. Open browser to: http://localhost:8080/index.html 2. Fill out the simulation form 3. Click “Start Simulation” 4. You’ll be redirected to the live map\n\n\n\nstreamlit run app.py\nThis opens at http://localhost:8501\n\n\n\n\n\nBackend MUST be running on port 8000 before starting simulation\nFrontend MUST be served via HTTP (not file://) for WebSocket to work\nThe WebSocket will automatically connect to ws://localhost:8000/ws when running locally\n\n\n\n\nWebSocket Connection Failed: - Make sure backend is running: uvicorn server:app --reload --port 8000 - Check browser console - it should show Using WebSocket: ws://localhost:8000/ws\nCORS Errors: - Don’t open HTML files directly (file://) - Use a local web server instead (python -m http.server)\nTrucks Not Showing: - Check backend terminal for logs - Check browser console (F12) for errors - Verify DynamoDB is accessible and has data"
   },
   {
-    "objectID": "index.html",
-    "href": "index.html",
-    "title": "Shipment Setup",
+    "objectID": "QUICK_START.html#the-problem",
+    "href": "QUICK_START.html#the-problem",
+    "title": "Quick Start Guide",
     "section": "",
-    "text": "Fill the form below to create your simulation.\n\n\nNumber of shipments (trucks): \n\n\nOrigin Port:  Basra Port \n\n\nDestination:  Baghdad Depot Mosul Depot Erbil Depot Kirkuk Depot \n\n\nDeparture Time: \n\n\nStart Simulation"
+    "text": "If you’re seeing CORS errors or WebSocket connection issues, you’re likely opening the HTML file directly (file://). Browsers block local file access for security."
   },
   {
-    "objectID": "index.html#iraq-truck-shipment-setup",
-    "href": "index.html#iraq-truck-shipment-setup",
-    "title": "Shipment Setup",
+    "objectID": "QUICK_START.html#solution-run-a-local-web-server",
+    "href": "QUICK_START.html#solution-run-a-local-web-server",
+    "title": "Quick Start Guide",
     "section": "",
-    "text": "Fill the form below to create your simulation.\n\n\nNumber of shipments (trucks): \n\n\nOrigin Port:  Basra Port \n\n\nDestination:  Baghdad Depot Mosul Depot Erbil Depot Kirkuk Depot \n\n\nDeparture Time: \n\n\nStart Simulation"
+    "text": "# Navigate to the _site directory\ncd _site\n\n# Start a simple HTTP server\npython3 -m http.server 8080\nThen open your browser to: http://localhost:8080/simulate.html\n\n\n\nTerminal 1 - Backend (FastAPI):\n# In the project root directory\nuvicorn server:app --reload --port 8000\nTerminal 2 - Frontend (Web Server):\n# In the _site directory\ncd _site\npython3 -m http.server 8080\nThen: 1. Open browser to: http://localhost:8080/index.html 2. Fill out the simulation form 3. Click “Start Simulation” 4. You’ll be redirected to the live map\n\n\n\nstreamlit run app.py\nThis opens at http://localhost:8501"
   },
   {
-    "objectID": "DEBUGGING.html",
-    "href": "DEBUGGING.html",
-    "title": "Debugging Guide - Trucks Not Showing on Map",
+    "objectID": "QUICK_START.html#important-notes",
+    "href": "QUICK_START.html#important-notes",
+    "title": "Quick Start Guide",
     "section": "",
-    "text": "I’ve added comprehensive debugging to help identify the issue. Follow these steps:\n\n\nWhen you start the server, you should see:\n🔗 Connected to DynamoDB table 'Shipments' in region 'eu-north-1'\nWhen you click “Start Simulation”, look for:\n[START] Simulation started with X trucks from Origin to Destination\n[SIM] Starting simulation loop...\n[SIM] First payload: X trucks, Y ships\n[SIM] Connected clients: 1\n[SIM] Sent initial payload to client\nWhat to check: - Are trucks being created? Look for the count in the log - Are clients connected? Should be at least 1 - Any error messages?\n\n\n\nOpen your browser’s Developer Tools (F12) and check the Console tab.\nExpected logs:\n[WS] Attempting to connect to ws://localhost:8000/ws\n[WS] ✅ Connected to ws://localhost:8000/ws\n[WS] 📨 Received message\n[WS] Data - Trucks: 4 Ships: 2 Route points: 200\n[MAP] Processing 4 trucks\n[MAP] ➕ Creating marker for TRUCK-1 at 30.5081 47.7835\nWhat to check: - Is WebSocket connected? If not, check if server is running - Are trucks in the data? Look for the count - Are markers being created?\n\n\n\n\n\nSymptoms: Console shows [WS] ❌ Error or connection fails Solution: - Make sure server is running: uvicorn server:app --reload --port 8000 - Check if port 8000 is available - If using file:// protocol, start a local server instead\n\n\n\nSymptoms: Console shows [WS] Data - Trucks: 0 Ships: X Solution: - Check backend logs - are trucks being created in DynamoDB? - Verify DynamoDB table exists and is accessible - Check AWS credentials\n\n\n\nSymptoms: Console shows trucks but no markers Solution: - Check for JavaScript errors in console - Verify truck coordinates are valid numbers - Check if Leaflet map is initialized (zoom to see if map loads)\n\n\n\nSymptoms: No logs after initial connection Solution: - The simulation loop should start automatically when you click “Start Simulation” - Check backend logs for errors in simulation_loop() - Verify the /start-sim endpoint was called successfully\n\n\n\n\nTest the endpoints directly:\n# Test if server is running\ncurl http://localhost:8000/\n\n# Test start simulation\ncurl -X POST http://localhost:8000/start-sim \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"numTrucks\": 2, \"origin\": \"Basra Port\", \"destination\": \"Baghdad Depot\", \"departure\": \"2024-01-01T00:00:00\"}'\n\n\n\nVerify data is actually in DynamoDB:\n# List all items with TRUCK prefix\naws dynamodb scan \\\n  --table-name Shipments \\\n  --filter-expression \"begins_with(truckId, :prefix)\" \\\n  --expression-attribute-values '{\":prefix\":{\"S\":\"TRUCK-\"}}' \\\n  --region eu-north-1\nYou should see trucks with IDs like TRUCK-1, TRUCK-2, etc.\n\n\n\nIf trucks still don’t show up: 1. Share the backend server logs 2. Share the browser console output 3. Check if there are any JavaScript errors in the console\nThe debugging output will help identify exactly where the issue is!"
+    "text": "Backend MUST be running on port 8000 before starting simulation\nFrontend MUST be served via HTTP (not file://) for WebSocket to work\nThe WebSocket will automatically connect to ws://localhost:8000/ws when running locally"
   },
   {
-    "objectID": "DEBUGGING.html#step-1-check-backend-server-logs",
-    "href": "DEBUGGING.html#step-1-check-backend-server-logs",
-    "title": "Debugging Guide - Trucks Not Showing on Map",
+    "objectID": "QUICK_START.html#troubleshooting",
+    "href": "QUICK_START.html#troubleshooting",
+    "title": "Quick Start Guide",
     "section": "",
-    "text": "When you start the server, you should see:\n🔗 Connected to DynamoDB table 'Shipments' in region 'eu-north-1'\nWhen you click “Start Simulation”, look for:\n[START] Simulation started with X trucks from Origin to Destination\n[SIM] Starting simulation loop...\n[SIM] First payload: X trucks, Y ships\n[SIM] Connected clients: 1\n[SIM] Sent initial payload to client\nWhat to check: - Are trucks being created? Look for the count in the log - Are clients connected? Should be at least 1 - Any error messages?"
-  },
-  {
-    "objectID": "DEBUGGING.html#step-2-check-browser-console",
-    "href": "DEBUGGING.html#step-2-check-browser-console",
-    "title": "Debugging Guide - Trucks Not Showing on Map",
-    "section": "",
-    "text": "Open your browser’s Developer Tools (F12) and check the Console tab.\nExpected logs:\n[WS] Attempting to connect to ws://localhost:8000/ws\n[WS] ✅ Connected to ws://localhost:8000/ws\n[WS] 📨 Received message\n[WS] Data - Trucks: 4 Ships: 2 Route points: 200\n[MAP] Processing 4 trucks\n[MAP] ➕ Creating marker for TRUCK-1 at 30.5081 47.7835\nWhat to check: - Is WebSocket connected? If not, check if server is running - Are trucks in the data? Look for the count - Are markers being created?"
-  },
-  {
-    "objectID": "DEBUGGING.html#step-3-common-issues",
-    "href": "DEBUGGING.html#step-3-common-issues",
-    "title": "Debugging Guide - Trucks Not Showing on Map",
-    "section": "",
-    "text": "Symptoms: Console shows [WS] ❌ Error or connection fails Solution: - Make sure server is running: uvicorn server:app --reload --port 8000 - Check if port 8000 is available - If using file:// protocol, start a local server instead\n\n\n\nSymptoms: Console shows [WS] Data - Trucks: 0 Ships: X Solution: - Check backend logs - are trucks being created in DynamoDB? - Verify DynamoDB table exists and is accessible - Check AWS credentials\n\n\n\nSymptoms: Console shows trucks but no markers Solution: - Check for JavaScript errors in console - Verify truck coordinates are valid numbers - Check if Leaflet map is initialized (zoom to see if map loads)\n\n\n\nSymptoms: No logs after initial connection Solution: - The simulation loop should start automatically when you click “Start Simulation” - Check backend logs for errors in simulation_loop() - Verify the /start-sim endpoint was called successfully"
-  },
-  {
-    "objectID": "DEBUGGING.html#step-4-manual-testing",
-    "href": "DEBUGGING.html#step-4-manual-testing",
-    "title": "Debugging Guide - Trucks Not Showing on Map",
-    "section": "",
-    "text": "Test the endpoints directly:\n# Test if server is running\ncurl http://localhost:8000/\n\n# Test start simulation\ncurl -X POST http://localhost:8000/start-sim \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"numTrucks\": 2, \"origin\": \"Basra Port\", \"destination\": \"Baghdad Depot\", \"departure\": \"2024-01-01T00:00:00\"}'"
-  },
-  {
-    "objectID": "DEBUGGING.html#step-5-check-dynamodb",
-    "href": "DEBUGGING.html#step-5-check-dynamodb",
-    "title": "Debugging Guide - Trucks Not Showing on Map",
-    "section": "",
-    "text": "Verify data is actually in DynamoDB:\n# List all items with TRUCK prefix\naws dynamodb scan \\\n  --table-name Shipments \\\n  --filter-expression \"begins_with(truckId, :prefix)\" \\\n  --expression-attribute-values '{\":prefix\":{\"S\":\"TRUCK-\"}}' \\\n  --region eu-north-1\nYou should see trucks with IDs like TRUCK-1, TRUCK-2, etc."
-  },
-  {
-    "objectID": "DEBUGGING.html#still-having-issues",
-    "href": "DEBUGGING.html#still-having-issues",
-    "title": "Debugging Guide - Trucks Not Showing on Map",
-    "section": "",
-    "text": "If trucks still don’t show up: 1. Share the backend server logs 2. Share the browser console output 3. Check if there are any JavaScript errors in the console\nThe debugging output will help identify exactly where the issue is!"
+    "text": "WebSocket Connection Failed: - Make sure backend is running: uvicorn server:app --reload --port 8000 - Check browser console - it should show Using WebSocket: ws://localhost:8000/ws\nCORS Errors: - Don’t open HTML files directly (file://) - Use a local web server instead (python -m http.server)\nTrucks Not Showing: - Check backend terminal for logs - Check browser console (F12) for errors - Verify DynamoDB is accessible and has data"
   }
 ]

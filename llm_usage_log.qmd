@@ -1,0 +1,10 @@
+## Use of ChatGPT in the Project
+
+### Brainstorming
+I used ChatGPT to generate ideas for integrating supervised and unsupervised learning into this project.
+
+### Writing
+For writing the report, we mainly wrote it for ourselves. But to keep track of all of the technicalities, we asked ChatGPT if we were missing any technical aspects of our code in the report. We also asked for it to check for grammar and run-on sentences since we wrote these updates as we progressed through the project. 
+
+### Code
+Chat GPT was mainly used to debug the code by adding outputs to the console to log our progress. We also used Chat gpt to write the ReadME file for the github. When I would run into an error, I would ask it to add code to debug. I also asked it organize my code with comments.
