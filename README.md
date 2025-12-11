@@ -1,85 +1,257 @@
-# Supply Chain Visibility Platform
+# Iraq Logistics Simulation Platform
 
-AWS-powered real-time shipment tracking and analytics dashboard.
+Real-Time Truck & Ship Simulation • DynamoDB Storage • WebSocket Streaming • Machine Learning Integration
 
----
-
-## Overview
-
-This project is a full-stack supply chain visibility solution built on AWS. It simulates real-time shipment events, ingests them via API Gateway and Lambda, stores them in DynamoDB and S3, and provides an interactive analytics dashboard built with Streamlit.
+**Frontend:** [https://sazdsan.georgetown.domains](https://sazdsan.georgetown.domains)
+**Backend API:** [https://logistics-backend.fly.dev](https://logistics-backend.fly.dev)
+**GitHub Repo:** [https://github.com/sazandkhalid/supply_chain_tracker](https://github.com/sazandkhalid/supply_chain_tracker)
 
 ---
 
-## Features
+## Project Overview
 
-- Event simulation for shipments (location, status, timestamp)
-- API Gateway endpoint to receive shipment batches
-- AWS Lambda function to validate, store in DynamoDB, archive in S3
-- DynamoDB table for querying active and historical shipments
-- S3 archive of batch JSON files for auditing
-- Streamlit dashboard for analytics:
-  - Map of shipment locations
-  - Delivery status breakdown
-  - Active shipments table
+This platform simulates real-time logistics operations across Iraq by integrating backend simulation, cloud storage, real-time WebSocket streaming, geospatial visualization, and machine learning. The system models truck routes between major Iraqi hubs and stochastic ship movements near Basra Port. All movement is streamed live to a browser-based dashboard.
+
+The project includes:
+
+* **FastAPI simulation backend** (async, event-driven)
+* **AWS DynamoDB** for persistent cloud storage
+* **Leaflet.js real-time frontend** with custom markers, polylines, and analytics overlays
+* **Unsupervised ML (KMeans)** for operational behavior clustering
+* **Supervised ML (Logistic Regression)** for delay probability prediction
+* **Quarto static site** deployed to cPanel
+* **Backend container** deployed to Fly.io
 
 ---
-## Architecture Diagram 
-               +--------------------------------------+
-               |           Event Simulator            |
-               |       (Python CLI Script)            |
-               +-----------------+--------------------+
-                                 |
-                                 v
-               +--------------------------------------+
-               |            API Gateway               |
-               |      (HTTP POST /event)              |
-               +-----------------+--------------------+
-                                 |
-                                 v
-               +--------------------------------------+
-               |            AWS Lambda                |
-               |   - Parse & Validate Batch           |
-               |   - Write to DynamoDB                |
-               |   - Archive Batch to S3              |
-               +--------+----------------+------------+
-                        |                |
-               +--------v-----+    +-----v----------+
-               |   DynamoDB    |    |      S3       |
-               | Shipments Table|   | Batch Archives|
-               +--------+------+    +---------------+
-                        |
-                        v
-               +--------------------------------------+
-               |       Streamlit Dashboard            |
-               | - Query DynamoDB                     |
-               | - Display Maps, Charts, Tables       |
-               +--------------------------------------+
 
-## AWS Services Used
+# System Architecture
 
-- **API Gateway**: Receives HTTP POST requests with event batches.
-- **AWS Lambda**: Stateless event processor.
-- **DynamoDB**: NoSQL database for real-time shipment status.
-- **S3**: Stores batch JSON archives.
-- **IAM**: Manages permissions for Lambda roles.
-- **CloudWatch**: Logs Lambda execution and errors.
+```
+Frontend (Quarto + Leaflet + JS)
+         │
+         │  WebSocket (1 Hz updates)
+         ▼
+Backend API (FastAPI + asyncio)
+         │
+         │  CRUD operations
+         ▼
+AWS DynamoDB (Shipments Table)
+         │
+         │  Offline model training
+         ▼
+Machine Learning (KMeans + Logistic Regression)
+```
 
-##How It Works
+---
 
-1️⃣ **Simulation**:  
-The `event_simulator.py` script generates batches of random shipment events and POSTs them to the API Gateway endpoint.
+# Features
 
-2️⃣ **Ingestion**:  
-API Gateway forwards events to a Lambda function.
+### Real-Time Truck Simulation
 
-3️⃣ **Processing**:  
-Lambda validates and parses the batch.
-- Stores individual items in DynamoDB.
-- Archives the entire batch as a JSON file in S3.
+* OSRM polyline routing
+* Position updated every second
+* ETA calculations and progress tracking
 
-4️⃣ **Analytics**:  
-Streamlit dashboard connects to DynamoDB to visualize:
-- Active shipments on a map.
-- Delivery status breakdown.
-- Tables of shipment records.
+### Ship Movement Simulation
 
+* Stochastic maritime drift around Basra Port
+* Real-time visualization
+
+### Cloud Data Storage (AWS DynamoDB)
+
+* Full persistence of:
+
+  * Truck states
+  * Ship states
+  * Route polylines
+  * Cumulative distances
+  * ETA and status
+
+### WebSockets
+
+* Backend streams JSON updates to the browser each second
+* Frontend automatically updates markers and popups
+
+### Machine Learning Integration
+
+* **KMeans clustering** → categorizes trucks by operational behavior
+* **Logistic Regression** → predicts real-time delay likelihood
+* Results displayed directly on map popups
+
+---
+
+# Repository Structure
+
+```
+supply_chain_tracker/
+│
+├── server.py                # FastAPI backend simulation engine
+├── models/
+│     ├── kmeans_speed_cluster.pkl
+│     └── delay_model.pkl
+├── simulate.js              # Frontend WebSocket + Leaflet logic
+├── index.qmd                # Quarto frontend
+├── requirements.txt
+└── README.md
+```
+
+---
+
+# Deployment
+
+### Backend (Fly.io)
+
+```
+flyctl deploy
+```
+
+Backend must listen on `0.0.0.0:8080`.
+
+Backend URL:
+**[https://logistics-backend.fly.dev](https://logistics-backend.fly.dev)**
+
+### Frontend (cPanel via Quarto)
+
+```
+quarto render
+cp -R _site/* ~/public_html/
+```
+
+Frontend URL:
+**[https://sazdsan.georgetown.domains](https://sazdsan.georgetown.domains)**
+
+---
+
+# Data Collection & Reproducibility
+
+### Data Source
+
+Data is **fully simulated** by the backend. No external datasets are used.
+
+### How Data Is Generated
+
+1. User starts simulation from frontend.
+2. Backend initializes trucks and ships.
+3. OSRM generates polyline routes.
+4. Each second:
+
+   * Trucks move forward along route
+   * Ships drift randomly
+   * ML predictions are computed
+   * DynamoDB saves state
+   * WebSocket streams state
+
+### Exporting Data
+
+```
+aws dynamodb scan --table-name Shipments > export.json
+```
+
+### Transparency & Reproducibility
+
+Although the DynamoDB table is private, **all data can be regenerated** using:
+
+1. The backend code in this repository
+2. The ML training scripts
+3. The frontend simulation UI
+
+Everything needed to replicate the system is included.
+
+---
+
+# 🛠 Setup Instructions
+
+### Install Dependencies
+
+```
+pip install -r requirements.txt
+```
+
+### Run Backend
+
+```
+uvicorn server:app --reload --host 0.0.0.0 --port 8080
+```
+
+### Run Frontend (Quarto)
+
+```
+quarto render
+```
+
+Open `_site/index.html`.
+
+---
+
+# Environment Configuration
+
+You must set:
+
+```
+AWS_ACCESS_KEY_ID=
+AWS_SECRET_ACCESS_KEY=
+AWS_REGION=eu-north-1
+DYNAMODB_TABLE_NAME=Shipments
+```
+
+For Fly.io, configure via:
+
+```
+flyctl secrets set AWS_ACCESS_KEY_ID=...
+flyctl secrets set AWS_SECRET_ACCESS_KEY=...
+```
+
+---
+
+# Script Explanations
+
+### `server.py`
+
+* Simulation engine
+* Routing + geospatial calculations
+* DynamoDB persistence
+* WebSocket data broadcaster
+* ML inference integration
+
+### `simulate.js`
+
+* Real-time WebSocket client
+* Leaflet map initialization
+* Marker updates + popups
+* Visualization of ML results
+
+### `models/`
+
+Contains trained ML models used for inference.
+
+---
+
+# Deployment Instructions
+
+1. Build backend container:
+
+```
+flyctl deploy
+```
+
+2. Render and upload frontend:
+
+```
+quarto render
+cp -R _site/* ~/public_html/
+```
+
+3. Visit:
+
+* Frontend → **[https://sazdsan.georgetown.domains](https://sazdsan.georgetown.domains)**
+* Backend → **[https://logistics-backend.fly.dev](https://logistics-backend.fly.dev)**
+
+---
+
+# Project Status
+
+✔ Fully functioning real-time logistics simulator
+✔ Live WebSocket updates
+✔ Persistent cloud storage
+✔ Machine learning integrated end-to-end
+✔ Frontend + backend deployed publicly

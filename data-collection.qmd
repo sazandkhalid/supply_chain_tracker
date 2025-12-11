@@ -122,6 +122,16 @@ Data Formats used:
 
 ## Linking to Data and Reproducibility
 
+Although DynamoDB is not publicly accessible, the following resources ensure full transparency and reproducibility:
+
+**Code Repositories+Backend Simulation Server (FastAPI + DynamoDB):**  
+https://github.com/sazandkhalid/supply_chain_tracker  
+
+**Frontend Visualization (Leaflet + WebSocket):**  
+https://sazdsan.georgetown.domains  
+
+### Reproducible Data Generation  
+Check READ.md
 
 ## Transparency and Replicability
 
