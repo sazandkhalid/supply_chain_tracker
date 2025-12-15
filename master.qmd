@@ -1,0 +1,11 @@
+---
+title: "Full Project Report"
+format: pdf
+---
+```markdown
+```{include: index.qmd}
+```{include: report.qmd}
+```{include: data-collection.qmd}
+```{include: data-cleaning.qmd}
+```{include: supervised-learning.qmd}
+```{include: unsupervised-learning.qmd}
