@@ -15,4 +15,4 @@ COPY models/ models/
 ENV PORT=8080
 EXPOSE ${PORT}
 
-CMD uvicorn main_unified:app --host 0.0.0.0 --port ${PORT}
+CMD ["sh", "-c", "uvicorn main_unified:app --host 0.0.0.0 --port ${PORT:-8080}"]
