@@ -2,7 +2,7 @@
 // 1. WebSocket connection to Fly.io backend
 // ===================================================
 
-const ws = new WebSocket("wss://logistics-backend.fly.dev/ws");
+const ws = new WebSocket("wss://tradeflow-backend-production.up.railway.app/ws");
 
 console.log("Connecting to WS:", ws.url);
 
