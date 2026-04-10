@@ -1,0 +1,8 @@
+.venv
+ml_env
+_site
+.quarto
+*.qmd
+*.ipynb
+.claude
+.DS_Store
