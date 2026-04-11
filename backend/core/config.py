@@ -1,5 +1,6 @@
 import logging
 from pydantic_settings import BaseSettings
+from pydantic import field_validator
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -47,7 +48,23 @@ class Settings(BaseSettings):
     # Twilio WhatsApp-enabled sender number in E.164 format, e.g. +14155238886
     TWILIO_WHATSAPP_FROM: Optional[str] = None
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
+
+    @field_validator("DATABASE_URL", mode="before")
+    @classmethod
+    def _normalize_database_url(cls, v: str) -> str:
+        """
+        Railway's Postgres plugin exposes DATABASE_URL as ``postgresql://...``.
+        SQLAlchemy's async engine needs an explicit asyncpg driver — rewrite
+        the scheme so operators don't have to know the difference.
+        """
+        if not v:
+            return v
+        if v.startswith("postgres://"):
+            v = "postgresql://" + v[len("postgres://"):]
+        if v.startswith("postgresql://") and "+asyncpg" not in v:
+            v = "postgresql+asyncpg://" + v[len("postgresql://"):]
+        return v
 
     def validate_region_compliance(self) -> None:
         """Warn loudly at startup if the configured AWS region is outside GCC."""

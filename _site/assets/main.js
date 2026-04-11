@@ -1,4 +1,4 @@
-const API_BASE = "https://logistics-backend.fly.dev";  // <-- your real fly domain
+const API_BASE = "https://tradeflow-backend-production.up.railway.app";
 
 async function startSim() {
     const numTrucks = document.getElementById("numTrucks").value;

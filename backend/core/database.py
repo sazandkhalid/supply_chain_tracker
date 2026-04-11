@@ -1,10 +1,22 @@
 from typing import AsyncGenerator, Optional
 
 import boto3
+from sqlalchemy.dialects.postgresql import UUID as _PGUUID
 from sqlalchemy.ext.asyncio import AsyncSession, AsyncEngine, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.orm import DeclarativeBase
 
 from .config import settings
+
+
+# Make Postgres UUID columns compile to CHAR(36) on SQLite so we can run
+# integration tests (and local dev) without a live Postgres.  Production
+# still uses real Postgres UUID — this only fires when the dialect is
+# SQLite.  Binding/result adaptation is handled by SQLAlchemy 2.0 via the
+# existing ``as_uuid=True`` flag.
+@compiles(_PGUUID, "sqlite")
+def _compile_uuid_sqlite(element, compiler, **kw):  # pragma: no cover — dialect hook
+    return "CHAR(36)"
 
 # Lazy-initialized so test collection doesn't try to connect
 _engine: Optional[AsyncEngine] = None
@@ -14,12 +26,13 @@ _session_factory: Optional[async_sessionmaker] = None
 def get_engine() -> AsyncEngine:
     global _engine
     if _engine is None:
-        _engine = create_async_engine(
-            settings.DATABASE_URL,
-            echo=settings.DEBUG,
-            pool_size=10,
-            max_overflow=20,
-        )
+        kwargs: dict = {"echo": settings.DEBUG}
+        # Connection pooling knobs are specific to network-backed drivers.
+        # SQLite (used in tests / local dev) rejects them.
+        if not settings.DATABASE_URL.startswith("sqlite"):
+            kwargs["pool_size"] = 10
+            kwargs["max_overflow"] = 20
+        _engine = create_async_engine(settings.DATABASE_URL, **kwargs)
     return _engine
 
 

@@ -2,13 +2,11 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID
 
+import bcrypt
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 from pydantic import BaseModel
 
 from .config import settings
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 class TokenData(BaseModel):
@@ -18,12 +16,27 @@ class TokenData(BaseModel):
     role: str
 
 
+# bcrypt's hard 72-byte input limit applies to every hash/verify call.
+# Truncate up front rather than letting bcrypt raise: matches passlib's
+# historical behavior and avoids silently-locking-out edge-case users.
+_BCRYPT_MAX = 72
+
+
+def _truncate(password: str) -> bytes:
+    return password.encode("utf-8")[:_BCRYPT_MAX]
+
+
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    hashed = bcrypt.hashpw(_truncate(password), bcrypt.gensalt())
+    return hashed.decode("utf-8")
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(plain, hashed)
+    try:
+        return bcrypt.checkpw(_truncate(plain), hashed.encode("utf-8"))
+    except ValueError:
+        # Malformed hash on disk — treat as verification failure, don't crash.
+        return False
 
 
 def create_access_token(data: TokenData, expires_delta: Optional[timedelta] = None) -> str:

@@ -23,16 +23,24 @@ app.add_middleware(
 )
 
 # ===============================
-# DYNAMODB SETUP
+# DYNAMODB SETUP (lazy)
 # ===============================
-# Use environment variables with fallback defaults
+# Use environment variables with fallback defaults.  boto3 won't verify
+# credentials until the first API call, so this import is always safe —
+# but we wrap the resource creation in try/except so a misconfigured
+# Railway environment (no AWS creds at all) still lets the rest of the
+# unified app boot and serve compliance traffic.
 AWS_REGION = os.getenv("AWS_REGION", os.getenv("AWS_DEFAULT_REGION", "eu-north-1"))
 DYNAMODB_TABLE_NAME = os.getenv("DYNAMODB_TABLE_NAME", "Shipments")
 
-dynamodb = boto3.resource("dynamodb", region_name=AWS_REGION)
-table = dynamodb.Table(DYNAMODB_TABLE_NAME)
-
-print(f"🔗 Connected to DynamoDB table '{DYNAMODB_TABLE_NAME}' in region '{AWS_REGION}'")
+try:
+    dynamodb = boto3.resource("dynamodb", region_name=AWS_REGION)
+    table = dynamodb.Table(DYNAMODB_TABLE_NAME)
+    print(f"🔗 Connected to DynamoDB table '{DYNAMODB_TABLE_NAME}' in region '{AWS_REGION}'")
+except Exception as e:
+    print(f"⚠️  DynamoDB init failed: {e}. Simulation endpoints that touch DynamoDB will return errors; the rest of the app still boots.")
+    dynamodb = None
+    table = None
 
 kmeans_model = None
 delay_model = None
