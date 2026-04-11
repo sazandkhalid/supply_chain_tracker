@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
@@ -67,7 +68,7 @@ class ShipmentResponse(BaseModel):
     actual_arrival: Optional[str]
     open_exception_count: int
     critical_exception_count: int
-    created_at: str
-    updated_at: str
+    created_at: datetime
+    updated_at: datetime
 
     model_config = {"from_attributes": True}

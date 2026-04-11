@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Any, Dict, Optional
 from uuid import UUID
 
@@ -43,7 +44,7 @@ class DocumentResponse(BaseModel):
     currency: Optional[str]
     file_name: Optional[str]
     file_url: Optional[str]
-    created_at: str
-    updated_at: str
+    created_at: datetime
+    updated_at: datetime
 
     model_config = {"from_attributes": True}

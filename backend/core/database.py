@@ -1,7 +1,7 @@
 from typing import AsyncGenerator, Optional
 
 import boto3
-from sqlalchemy.dialects.postgresql import UUID as _PGUUID
+from sqlalchemy.dialects.postgresql import JSONB as _PGJSONB, UUID as _PGUUID
 from sqlalchemy.ext.asyncio import AsyncSession, AsyncEngine, async_sessionmaker, create_async_engine
 from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.orm import DeclarativeBase
@@ -17,6 +17,17 @@ from .config import settings
 @compiles(_PGUUID, "sqlite")
 def _compile_uuid_sqlite(element, compiler, **kw):  # pragma: no cover — dialect hook
     return "CHAR(36)"
+
+
+# Same idea for JSONB: SQLite has no native JSONB, but storing JSON as TEXT
+# is fine for tests — SQLAlchemy's Python-side bind/result handling on the
+# column's `Optional[dict]` type already goes through dict <-> JSON.  Without
+# this shim, create_all() explodes on SQLite when it hits a JSONB column,
+# which silently leaves half the tables missing and makes every endpoint
+# that touches documents / events / exceptions return 500 under tests.
+@compiles(_PGJSONB, "sqlite")
+def _compile_jsonb_sqlite(element, compiler, **kw):  # pragma: no cover — dialect hook
+    return "TEXT"
 
 # Lazy-initialized so test collection doesn't try to connect
 _engine: Optional[AsyncEngine] = None

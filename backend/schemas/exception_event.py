@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
@@ -17,7 +18,7 @@ class ExceptionEventResponse(BaseModel):
     resolved_at: Optional[str]
     resolved_by: Optional[UUID]
     rule_metadata: Optional[Dict[str, Any]]
-    created_at: str
+    created_at: datetime
 
     model_config = {"from_attributes": True}
 
